@@ -7,8 +7,8 @@
     // ===== Configuration =====
     var CONFIG = {
         connHitPx: 10,          // px threshold for clicking near a connection line
-        handleSize: 5,          // half-size of resize handles
-        handleGrabPx: 8,        // px tolerance around resize handles
+        handleSize: 10,         // half-size of resize handles (22px total, touch-friendly)
+        handleGrabPx: 14,       // px tolerance around resize handles
         minShapeSize: 20,       // minimum width/height for any shape
         dupOffset: 30,          // pixel offset when duplicating
         arrowSize: 10,          // arrowhead length
@@ -36,6 +36,7 @@
         resizeHandle: null, resizeStart: null,
         drawStart: null, panStart: null, selectStart: null, drawStartShapeId: null,
         nextId: 1, undoStack: [], redoStack: [],
+        pointers: {}, pinchStart: null,  // active pointers for pinch-to-zoom
         nameCounters: {},            // per-type counter for shapes (string keys)
         connNameCounter: 0,          // counter for connection names
         actionLog: [],               // [{msg, cat, ts}]
@@ -889,10 +890,31 @@
         console.debug('startDrawingFromShape', shape.type, 'ep:', ep.x, ep.y, 'accent:', ac);
     }
 
-    // ===== Mouse: mousedown =====
-    container.addEventListener('mousedown', function(e) {
+    // ===== Pointer: pointerdown (unified mouse + touch) =====
+    container.addEventListener('pointerdown', function(e) {
+        // Track pointer for pinch-to-zoom
+        S.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+        var ptrCount = Object.keys(S.pointers).length;
+        if (ptrCount >= 2) {
+            // Cancel any in-progress single-pointer action
+            S.isDragging = false; S.isResizing = false; S.isDrawing = false;
+            S.isDraggingConn = false; S.isSelecting = false;
+            previewLayer.innerHTML = '';
+            // Start pinch
+            var ptrs = Object.values(S.pointers);
+            var dxPinch = ptrs[1].x - ptrs[0].x;
+            var dyPinch = ptrs[1].y - ptrs[0].y;
+            S.pinchStart = {
+                dist: Math.sqrt(dxPinch * dxPinch + dyPinch * dyPinch),
+                zoom: S.zoom, panX: S.panX, panY: S.panY,
+                cx: (ptrs[0].x + ptrs[1].x) / 2, cy: (ptrs[0].y + ptrs[1].y) / 2
+            };
+            e.preventDefault();
+            return;
+        }
+
         // If text editor is open, clicking the canvas should commit the text first.
-        // blur fires after mousedown, but mousedown can deselectAll() first —
+        // blur fires after pointerdown, but pointerdown can deselectAll() first —
         // which makes the blur handler skip the save.  Commit eagerly here.
         if (textEditor.classList.contains('visible')) {
             var sIds = shapeSel();
@@ -902,13 +924,14 @@
             }
             textEditor.classList.remove('visible');
             pushUndo(); render();
-            // Fall through — let the rest of mousedown process normally
+            // Fall through — let the rest of pointerdown process normally
         }
         if (e.button === 1) {
             S.isPanning = true;
             S.panStart = { x: e.clientX, y: e.clientY };
             container.style.cursor = 'grabbing';
             e.preventDefault();
+            container.setPointerCapture(e.pointerId);
             return;
         }
         if (e.button !== 0) return;
@@ -953,6 +976,8 @@
             S.resizeHandle = hitHandle.dataset.handle;
             S.resizeStart = { mx: pos.x, my: pos.y, sx: hit.x, sy: hit.y, sw: hit.width, sh: hit.height };
             select(hit.id, e.shiftKey);
+            e.preventDefault();
+            container.setPointerCapture(e.pointerId);
             return;
         }
         if (hit) {
@@ -976,6 +1001,8 @@
                         S.dragStart = { x: pos.x, y: pos.y };
                         S.dragConnEnd = iD1 < iD2 ? 'from' : 'to';
                         console.debug('intercepted shape click for conn endpoint', S.dragConnEnd);
+                        e.preventDefault();
+                        container.setPointerCapture(e.pointerId);
                         return;
                     }
                 }
@@ -988,6 +1015,8 @@
                 S.drawStart = { x: pos.x, y: pos.y };
                 S.drawStartShapeId = hit.id;
                 startDrawingFromShape(hit, pos);
+                e.preventDefault();
+                container.setPointerCapture(e.pointerId);
                 return;
             }
             select(hit.id, e.shiftKey);
@@ -999,6 +1028,8 @@
                     return sh ? { x: sh.x, y: sh.y } : null;
                 }).filter(Boolean);
             }
+            e.preventDefault();
+            container.setPointerCapture(e.pointerId);
             return;
         }
 
@@ -1035,6 +1066,8 @@
                 S.dragConnEnd = null;
                 S.dragConnAnchors = [null, null];
             }
+            e.preventDefault();
+            container.setPointerCapture(e.pointerId);
             return;
         }
 
@@ -1046,12 +1079,16 @@
             S.isDrawing = true;
             S.drawStart = { x: sx, y: sy };
             S.drawStartShapeId = null;
+            e.preventDefault();
+            container.setPointerCapture(e.pointerId);
             return;
         }
 
         if (S.tool === 'select') {
             S.isSelecting = true;
             S.selectStart = { x: sx, y: sy };
+            e.preventDefault();
+            container.setPointerCapture(e.pointerId);
             return;
         }
         if (S.tool === 'text') {
@@ -1068,10 +1105,35 @@
         S.drawStart = { x: sx, y: sy };
         S.drawStartShapeId = null;
         console.debug('line tool: drawing from empty canvas at', sx, sy);
+        e.preventDefault();
+        container.setPointerCapture(e.pointerId);
     });
 
-    // ===== Mouse: mousemove =====
-    container.addEventListener('mousemove', function(e) {
+    // ===== Pointer: pointermove (unified mouse + touch) =====
+    container.addEventListener('pointermove', function(e) {
+        // Update pointer tracking for pinch
+        S.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+
+        // Handle pinch-to-zoom
+        if (S.pinchStart && Object.keys(S.pointers).length >= 2) {
+            var ptrs = Object.values(S.pointers);
+            var dxP = ptrs[1].x - ptrs[0].x;
+            var dyP = ptrs[1].y - ptrs[0].y;
+            var newDist = Math.sqrt(dxP * dxP + dyP * dyP);
+            var scale = newDist / S.pinchStart.dist;
+            var r = container.getBoundingClientRect();
+            var cx = (ptrs[0].x + ptrs[1].x) / 2 - r.left;
+            var cy = (ptrs[0].y + ptrs[1].y) / 2 - r.top;
+            var newZoom = clamp(S.pinchStart.zoom * scale, CONFIG.minZoom, CONFIG.maxZoom);
+            S.zoom = newZoom;
+            S.panX = cx - (cx - S.pinchStart.panX) * (newZoom / S.pinchStart.zoom);
+            S.panY = cy - (cy - S.pinchStart.panY) * (newZoom / S.pinchStart.zoom);
+            // Also pan with finger movement
+            S.panX += (cx - (S.pinchStart.cx - r.left)) * (1 - newZoom / S.pinchStart.zoom);
+            applyTransform();
+            return;
+        }
+
         var pos = toCanvas(e.clientX, e.clientY);
         var sx = snap(pos.x), sy = snap(pos.y);
 
@@ -1197,17 +1259,25 @@
         }
     });
 
-    // ===== Mouse: mouseup =====
-    container.addEventListener('mouseup', function(e) {
-        if (S.isPanning) { S.isPanning = false; updateCursor(); return; }
+    // ===== Pointer: pointerup (unified mouse + touch) =====
+    container.addEventListener('pointerup', function(e) {
+        // Clean up pointer tracking
+        delete S.pointers[e.pointerId];
+
+        // End pinch
+        if (S.pinchStart && Object.keys(S.pointers).length < 2) {
+            S.pinchStart = null;
+            render();
+        }
+
+        if (S.isPanning) { S.isPanning = false; updateCursor(); container.releasePointerCapture(e.pointerId); return; }
         if (S.isResizing || S.isDragging) {
             if (S.isDragging) logAction('Moved '+shapeSel().length+' shape(s)', 'move');
             if (S.isResizing) logAction('Resized '+shapeSel().map(shapeName).join(', '), 'edit');
             S.isResizing = false; S.isDragging = false;
             pushUndo(); render();
+            container.releasePointerCapture(e.pointerId);
             return;
-        }
-        if (S.isDraggingConn) {
             S.isDraggingConn = false;
             var cd = findConn(S.dragConnId);
 
@@ -1266,9 +1336,10 @@
             S.dragConnAnchors = null;
             previewLayer.innerHTML = '';
             pushUndo(); render();
+            container.releasePointerCapture(e.pointerId);
             return;
         }
-        if (S.isSelecting) { S.isSelecting = false; previewLayer.innerHTML = ''; render(); return; }
+        if (S.isSelecting) { S.isSelecting = false; previewLayer.innerHTML = ''; render(); container.releasePointerCapture(e.pointerId); return; }
         if (S.isDrawing) {
             var rawPos = toCanvas(e.clientX, e.clientY);
             var ex = snap(rawPos.x), ey = snap(rawPos.y);
@@ -1280,7 +1351,17 @@
                 var sw2 = Math.abs(ex - S.drawStart.x);
                 var sh2 = Math.abs(ey - S.drawStart.y);
                 if (sw2 < 5 && sh2 < 5) {
-                    // Tiny drag — let the click handler place a default-sized shape
+                    // Tiny drag — place a default-sized shape
+                    var dShape = addShape(pendingShape.shape, snap(S.drawStart.x) - pendingShape.w/2, snap(S.drawStart.y) - pendingShape.h/2, pendingShape.w, pendingShape.h);
+                    clampShape(dShape);
+                    pushUndo();
+                    select(dShape.id);
+                    render();
+                    pendingShape = null;
+                    container.style.cursor = 'default';
+                    updateCursor();
+                    clearToolActive();
+                    container.releasePointerCapture(e.pointerId);
                     return;
                 }
                 var x = Math.min(S.drawStart.x, ex);
@@ -1296,6 +1377,7 @@
                 container.style.cursor = 'default';
                 updateCursor();
                 clearToolActive();
+                container.releasePointerCapture(e.pointerId);
                 return;
             }
 
@@ -1330,8 +1412,21 @@
             console.debug('line tool: committed connection', fromId, '→', toId, '| sxSnap:', !!sxSnap, 'seSnap:', !!seSnap, '| rels:', fromRel, toRel);
             pushUndo();
             render();
+            container.releasePointerCapture(e.pointerId);
         }
     });
+
+    // ===== Cleanup: pointercancel / lost capture =====
+    container.addEventListener('pointercancel', cleanupPointer);
+    container.addEventListener('lostpointercapture', cleanupPointer);
+    function cleanupPointer(e) {
+        delete S.pointers[e.pointerId];
+        if (S.pinchStart && Object.keys(S.pointers).length < 2) S.pinchStart = null;
+        S.isPanning = false; S.isDragging = false; S.isResizing = false;
+        S.isDrawing = false; S.isDraggingConn = false; S.isSelecting = false;
+        previewLayer.innerHTML = '';
+        updateCursor();
+    }
 
     // ===== Wheel zoom =====
     container.addEventListener('wheel', function(e) {
@@ -1390,7 +1485,7 @@
 
     // ===== Text input =====
     textInput.addEventListener('blur', function() {
-        if (!textEditor.classList.contains('visible')) return;  // already committed by mousedown
+        if (!textEditor.classList.contains('visible')) return;  // already committed by pointerdown
         var sIds = shapeSel();
         if (sIds.length === 1) {
             var s = findShape(sIds[0]);
@@ -1454,6 +1549,16 @@
     // ===== Toolbar action buttons =====
     document.getElementById('btn-undo').addEventListener('click', undo);
     document.getElementById('btn-redo').addEventListener('click', redo);
+    document.getElementById('btn-duplicate').addEventListener('click', function() {
+        shapeSel().forEach(function(id) { dup(id); });
+        pushUndo(); render();
+    });
+    document.getElementById('btn-delete').addEventListener('click', function() {
+        shapeSel().forEach(function(id) { deleteShape(id); });
+        connSel().forEach(function(id) { deleteConn(id); });
+        S.selection = [];
+        pushUndo(); render();
+    });
     document.getElementById('btn-grid').addEventListener('click', function() {
         S.showGrid = !S.showGrid;
         this.classList.toggle('active', S.showGrid);
@@ -1846,6 +1951,9 @@
                             var s = findShape(id);
                             if (s) { s.locked = !s.locked; logAction((s.locked?'Locked':'Unlocked')+' '+s.name, 'edit'); }
                         });
+                        break;
+                    case 'edit-text':
+                        if (sIds.length === 1) { startTextEdit(sIds[0]); contextMenu.classList.add('hidden'); return; }
                         break;
                 }
             } else if (cIds.length > 0) {

@@ -83,6 +83,7 @@ html, body {
     padding: 0 10px;
     z-index: 1000;
     gap: 3px;
+    touch-action: manipulation;
 }
 
 .app-logo {
@@ -106,7 +107,8 @@ html, body {
 }
 
 .tool-btn {
-    width: 34px; height: 34px;
+    width: 40px; height: 40px;
+    min-width: 40px; min-height: 40px;
     border: none;
     background: transparent;
     color: var(--text-icon);
@@ -123,7 +125,8 @@ html, body {
 
 /* Shape buttons in toolbar */
 .shape-btn {
-    width: 34px; height: 34px;
+    width: 40px; height: 40px;
+    min-width: 40px; min-height: 40px;
     border: 1px solid transparent;
     background: transparent;
     color: var(--shape-btn-color);
@@ -141,7 +144,7 @@ html, body {
 
 /* Style controls in toolbar */
 #toolbar input[type="color"] {
-    width: 28px; height: 28px;
+    width: 32px; height: 32px;
     border: 2px solid var(--border-input);
     border-radius: 4px;
     cursor: pointer;
@@ -153,7 +156,7 @@ html, body {
 #toolbar input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
 
 #toolbar > input[type="number"] {
-    width: 36px; height: 28px;
+    width: 40px; height: 32px;
     background: var(--bg-input);
     border: 1px solid var(--border-input);
     border-radius: 4px;
@@ -209,6 +212,9 @@ html, body {
     position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
     overflow: hidden;
     background: var(--bg-oob);
+    touch-action: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 #canvas {
@@ -253,10 +259,10 @@ html, body {
 /* Resize handles */
 .resize-handle {
     position: absolute;
-    width: 10px; height: 10px;
+    width: 22px; height: 22px;
     background: var(--accent);
     border: 2px solid var(--handle-border);
-    border-radius: 2px;
+    border-radius: 3px;
     z-index: 10;
 }
 
@@ -274,6 +280,7 @@ html, body {
 .shape-text {
     position: absolute;
     pointer-events: none;
+    touch-action: none;
     font-weight: 500;
     white-space: pre-wrap; word-break: break-word;
     max-width: calc(100% - 16px); max-height: calc(100% - 16px);
@@ -461,11 +468,13 @@ html, body {
 #context-menu.hidden { display: none; }
 
 .context-item {
-    padding: 8px 12px;
-    font-size: 13px; color: var(--text-body);
+    padding: 10px 14px;
+    font-size: 14px; color: var(--text-body);
     cursor: pointer;
     border-radius: 4px;
     transition: background 0.1s;
+    min-height: 40px;
+    display: flex; align-items: center;
 }
 .context-item:hover { background: var(--btn-hover-bg); }
 
@@ -566,8 +575,9 @@ html, body {
 }
 .export-drop.visible { display: flex; }
 .export-item {
-    padding: 8px 12px; font-size: 13px; color: var(--text-body);
+    padding: 10px 14px; font-size: 14px; color: var(--text-body);
     cursor: pointer; border-radius: 4px; user-select: none;
+    min-height: 40px; display: flex; align-items: center;
 }
 .export-item:hover { background: var(--bg-input); color: var(--accent); }
 
