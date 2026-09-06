@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About diagram</title>
+    <title>About daigram</title>
     <style>
-        :root {
+        /* ===== Theme Variables ===== */
+        :root,
+        [data-theme="dark"] {
             --bg-body: #1e1e2e;
             --bg-card: #181825;
             --text-body: #cdd6f4;
@@ -19,6 +21,20 @@
             --code-bg: #11111b;
         }
 
+        [data-theme="light"] {
+            --bg-body: #f8f9fa;
+            --bg-card: #ffffff;
+            --text-body: #333333;
+            --text-muted: #888888;
+            --accent: #7c3aed;
+            --accent-hover: #8b5cf6;
+            --border: #e0e0e0;
+            --border-input: #cccccc;
+            --btn-hover-bg: #f0f0f0;
+            --btn-active-bg: #ede9fe;
+            --code-bg: #f0f0f0;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
@@ -27,6 +43,7 @@
             color: var(--text-body);
             line-height: 1.6;
             min-height: 100vh;
+            transition: background 0.2s, color 0.2s;
         }
 
         .container {
@@ -58,9 +75,21 @@
         h1 {
             font-size: 32px;
             color: var(--text-body);
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             font-weight: 700;
             letter-spacing: -0.5px;
+        }
+
+        .version {
+            display: inline-block;
+            font-size: 13px;
+            color: var(--accent);
+            background: var(--btn-active-bg);
+            padding: 2px 10px;
+            border-radius: 12px;
+            margin-left: 8px;
+            vertical-align: middle;
+            font-weight: 500;
         }
 
         .subtitle {
@@ -68,22 +97,7 @@
             color: var(--text-muted);
             margin-bottom: 24px;
             max-width: 560px;
-        }
-
-        .btn-launch {
-            display: inline-block;
-            padding: 10px 24px;
-            background: var(--accent);
-            color: var(--bg-body);
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 14px;
-            transition: all 0.15s;
-        }
-
-        .btn-launch:hover {
-            background: var(--accent-hover);
+            margin-top: 8px;
         }
 
         section {
@@ -131,7 +145,7 @@
         .features-list .label {
             color: var(--accent);
             font-weight: 600;
-            min-width: 140px;
+            min-width: 160px;
         }
 
         .features-list .desc {
@@ -246,15 +260,82 @@
         .tip strong {
             color: var(--text-body);
         }
+
+        /* Theme toggle button */
+        .theme-toggle {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            width: 36px; height: 36px;
+            border: 1px solid var(--border-input);
+            background: var(--bg-card);
+            color: var(--text-body);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+            z-index: 100;
+        }
+
+        .theme-toggle:hover {
+            background: var(--btn-hover-bg);
+        }
+
+        /* Version history */
+        .changelog {
+            margin: 16px 0;
+        }
+
+        .changelog-entry {
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .changelog-entry:last-child {
+            border-bottom: none;
+        }
+
+        .changelog-entry .ver {
+            font-weight: 700;
+            color: var(--accent);
+            font-size: 15px;
+        }
+
+        .changelog-entry .date {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-left: 8px;
+        }
+
+        .changelog-entry ul {
+            list-style: none;
+            margin: 6px 0 0 0;
+        }
+
+        .changelog-entry li {
+            font-size: 14px;
+            color: var(--text-muted);
+            padding: 2px 0;
+        }
+
+        .changelog-entry li::before {
+            content: '\2022';
+            color: var(--accent);
+            margin-right: 8px;
+        }
     </style>
 </head>
 <body>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">☀</button>
+
     <div class="container">
         <header>
-            <a href="index.html" class="logo">&#9699; diagram</a>
-            <h1>diagram</h1>
+            <a href="index.html" class="logo">&#9699; daigram</a>
+            <h1>daigram <span class="version" id="version-display">v1.0.0</span></h1>
             <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
-            <a href="index.html" class="btn-launch">Launch App</a>
         </header>
 
         <section>
@@ -279,6 +360,10 @@
                 <li>
                     <span class="label">Auto-Save</span>
                     <span class="desc">Work is automatically saved to localStorage and survives page reloads.</span>
+                </li>
+                <li>
+                    <span class="label">Touch Support</span>
+                    <span class="desc">Pointer Events for iPadOS and touchscreens, pinch-to-zoom, and finger-friendly handles.</span>
                 </li>
                 <li>
                     <span class="label">Keyboard Shortcuts</span>
@@ -326,21 +411,95 @@
             <ul class="tech-list">
                 <li><strong>Framework:</strong>&nbsp;&nbsp;Vanilla JavaScript (ES5-compatible), no dependencies</li>
                 <li><strong>Rendering:</strong>&nbsp;&nbsp;DOM-based shapes with inline SVG</li>
+                <li><strong>Input:</strong>&nbsp;&nbsp;Pointer Events API (unified mouse + touch + pen)</li>
                 <li><strong>State:</strong>&nbsp;&nbsp;Centralized state object with undo/redo (50 steps)</li>
                 <li><strong>Theme:</strong>&nbsp;&nbsp;Catppuccin Mocha dark color scheme with light mode toggle</li>
                 <li><strong>Canvas:</strong>&nbsp;&nbsp;10,000 x 10,000 px grid layer</li>
-                <li><strong>Zoom:</strong>&nbsp;&nbsp;Mouse wheel zoom (0.1x to 5x)</li>
+                <li><strong>Zoom:</strong>&nbsp;&nbsp;Mouse wheel zoom (0.1x to 5x) + pinch-to-zoom</li>
             </ul>
         </section>
 
+        <section>
+            <h2>Version History</h2>
+            <div class="changelog">
+                <div class="changelog-entry">
+                    <span class="ver">1.0.0</span><span class="date">Sep 6, 2025</span>
+                    <ul>
+                        <li>Pointer Events API — unified mouse, touch, and pen input</li>
+                        <li>Pinch-to-zoom on touchscreens</li>
+                        <li>Touch-friendly resize handles (22px)</li>
+                        <li>Larger toolbar buttons and context menu items (40px+ targets)</li>
+                        <li>Delete and Duplicate toolbar buttons for keyboardless use</li>
+                        <li>"Edit Text" in context menu</li>
+                        <li>Versioning system and about page light theme</li>
+                        <li>Fixed: connection endpoint snap on release</li>
+                    </ul>
+                </div>
+                <div class="changelog-entry">
+                    <span class="ver">0.3.0</span><span class="date">Sep 6, 2025</span>
+                    <ul>
+                        <li>Custom SVG shapes with viewBox control</li>
+                        <li>Export to PNG, JPG, PDF (auto-crop and full canvas)</li>
+                        <li>Save/Load project files (.json)</li>
+                        <li>Project name and canvas dimensions in properties panel</li>
+                        <li>Shape naming, connection naming, action log</li>
+                        <li>Text alignment and padding controls</li>
+                        <li>Connection endpoint dragging with smart snap</li>
+                        <li>Catppuccin Mocha dark theme with light mode toggle</li>
+                        <li>About page</li>
+                    </ul>
+                </div>
+                <div class="changelog-entry">
+                    <span class="ver">0.2.0</span><span class="date">Sep 3, 2025</span>
+                    <ul>
+                        <li>Shape tools: rectangle, rounded rect, circle, diamond, triangle, terminator</li>
+                        <li>Line/arrow connections between shapes with outline snapping</li>
+                        <li>Text tool for floating labels</li>
+                        <li>Fill, stroke, opacity, and text color styling</li>
+                        <li>Undo/redo (50-step history)</li>
+                        <li>Zoom and pan with mouse wheel</li>
+                        <li>Grid and snap-to-grid</li>
+                        <li>Context menu: duplicate, delete, reorder, lock</li>
+                        <li>Auto-save to localStorage</li>
+                    </ul>
+                </div>
+                <div class="changelog-entry">
+                    <span class="ver">0.1.0</span><span class="date">Sep 1, 2025</span>
+                    <ul>
+                        <li>Initial prototype — canvas, basic shapes, selection and dragging</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
         <footer>
-            <p>diagram &mdash; a lightweight diagram editor</p>
+            <p>daigram &mdash; a lightweight diagram editor</p>
             <div class="footer-links">
-                <a href="index.html">Launch App</a><span>&middot;</span>
-                <a href="README.md">README</a><span>&middot;</span>
-                <a href="REVIEW.md">Technical Review</a>
+                <a href="index.html">Open Editor</a><span>&middot;</span>
+                <a href="README.md">README</a>
             </div>
         </footer>
     </div>
+
+    <script>
+    (function() {
+        // Theme
+        var savedTheme = localStorage.getItem('daigram-theme') || 'dark';
+        document.documentElement.dataset.theme = savedTheme;
+        var toggleBtn = document.getElementById('theme-toggle');
+        toggleBtn.textContent = savedTheme === 'light' ? '☾' : '☀';
+        toggleBtn.addEventListener('click', function() {
+            var isDark = document.documentElement.dataset.theme !== 'light';
+            var newTheme = isDark ? 'light' : 'dark';
+            document.documentElement.dataset.theme = newTheme;
+            toggleBtn.textContent = newTheme === 'light' ? '☾' : '☀';
+            localStorage.setItem('daigram-theme', newTheme);
+        });
+
+        // Version
+        var version = localStorage.getItem('daigram-version') || '1.0.0';
+        document.getElementById('version-display').textContent = 'v' + version;
+    })();
+    </script>
 </body>
 </html>

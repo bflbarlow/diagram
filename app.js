@@ -4,6 +4,9 @@
 (function() {
     'use strict';
 
+    // ===== Version =====
+    var VERSION = '1.0.0';  // touch support + pointer events + pinch zoom
+
     // ===== Configuration =====
     var CONFIG = {
         connHitPx: 10,          // px threshold for clicking near a connection line
@@ -1278,7 +1281,8 @@
             pushUndo(); render();
             container.releasePointerCapture(e.pointerId);
             return;
-            S.isDraggingConn = false;
+        }
+        if (S.isDraggingConn) {
             var cd = findConn(S.dragConnId);
 
             if (S.dragConnEnd && cd) {
@@ -2011,6 +2015,9 @@
 
     // ===== Init =====
     function init() {
+        // Store version for about page
+        localStorage.setItem('daigram-version', VERSION);
+
         // Load theme
         var savedTheme = localStorage.getItem('daigram-theme') || localStorage.getItem('diagramflow-theme') || 'dark';
         document.documentElement.dataset.theme = savedTheme;
