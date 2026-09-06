@@ -1,8 +1,8 @@
-# DiagramFlow — Technical Review
+# Diagram — Technical Review (v1.1)
 
-**Scope reviewed:** `index.html` (108 lines), `app.js` (839 lines), `styles.css` (378 lines)
-**Date:** current session
-**Reviewer note:** This is a single-file-per-concern vanilla JS app with no build step. That's a good fit for the project's size, but the single `app.js` IIFE has grown into a monolith that mixes state, rendering, geometry math, and DOM event wiring in one scope. The plan below is organized so it can be done incrementally without a rewrite.
+**Scope reviewed:** `index.html` (199 lines), `app.js` (2171 lines), `styles.css` (782 lines)
+**Date:** Current
+**Note:** This review documents architectural findings for ongoing maintenance. Many structural issues (unified selection, de-duplication) remain valid areas for future improvement. The P1–P3 ecosystem compliance migration is complete as of v1.1.
 
 ---
 
@@ -101,10 +101,9 @@ Most panel inputs are cached once at top of file (`propFill`, `propStroke`, etc.
 
 **Recommendation:** Define one `SHAPE_DEFS` table in JS (id, label, default w/h, SVG-renderer function, small icon path) and generate the toolbar buttons from it at init time, rather than hand-authoring both the HTML and the switch statement. This makes "add a new shape" a one-object-literal change instead of a two-file, two-place edit.
 
-### 2.8 `README.md` is now inaccurate
-The README still documents features removed in Round 1 simplification: hand tool, orthogonal/curved connectors, minimap, export/import, hexagon/parallelogram shapes, drag-and-drop from a sidebar palette, and a keyboard shortcut table referencing keys (`H`, `R`, `Q`, `C`, `E`, `D`, `O`, `X`) that no longer exist in `app.js` (`grep` confirms only `v/l/a/t/g/s/+/-` plus ctrl/cmd combos are wired). This is actively misleading to anyone onboarding onto the project.
+### 2.8 `README.md` is now accurate (updated for v1.1)
 
-**Recommendation:** Rewrite `README.md` to match current reality (small task, see plan below) — this should be done in the same pass as any other cleanup since it's low-risk, high-value.
+The README was rewritten in v1.1 to reflect the current tool set, file structure (including `vendor/`), ecosystem compliance status, and accurate feature list.
 
 ---
 
@@ -127,7 +126,7 @@ The README still documents features removed in Round 1 simplification: hand tool
 
 7. **Cache remaining panel DOM refs** (`prop-x/y/width/height/text`) at top of file (~10 min, zero risk).
 
-8. **Rewrite `README.md`** to reflect current tool set, shortcuts, and file structure (~20 min).
+8. **README.md updated** for v1.1: accurate tool set, file structure, ecosystem compliance, and version info (~20 min, done).
 
 9. **(Larger, optional) Split `app.js` into topic files** under a shared namespace, per §2.1 — do this only after 1–8 are done and stable, since it's a mechanical but large diff.
 

@@ -1,11 +1,11 @@
-// ===== daigram v3 =====
+// ===== diagram v3 =====
 // Open browser console (F12 → Console) to see debug output.
 // If connections don't work, paste this in console: localStorage.clear(); location.reload();
 (function() {
     'use strict';
 
     // ===== Version =====
-    var VERSION = '1.0.0';  // touch support + pointer events + pinch zoom
+    var VERSION = '1.1.0';  // P3 compliance: icons, tokens, a11y, theme sync, localStorage cleanup
 
     // ===== Configuration =====
     var CONFIG = {
@@ -65,12 +65,12 @@
     var logHeader      = document.getElementById('log-header');
 
     // Theme colors (read from CSS vars, updated on toggle)
-    var T = { accent: '#cba6f7', grid: '#2a2a3e' };
+    var T = { accent: '#2563EB', grid: '#2C2C32' };
     function readTheme() {
         try {
             var style = getComputedStyle(document.documentElement);
-            var a = style.getPropertyValue('--accent').trim();
-            var g = style.getPropertyValue('--grid').trim();
+            var a = style.getPropertyValue('--color-accent').trim();
+            var g = style.getPropertyValue('--color-grid-line').trim();
             if (a) T.accent = a;
             if (g) T.grid = g;
         } catch(e) { /* keep hardcoded fallbacks */ }
@@ -285,7 +285,7 @@
     // ===== Undo/Redo =====
     function saveState() {
         try {
-            localStorage.setItem('daigram-state', JSON.stringify({
+            localStorage.setItem('diagram-state', JSON.stringify({
                 shapes: S.shapes, connections: S.connections, nextId: S.nextId,
                 nameCounters: S.nameCounters, connNameCounter: S.connNameCounter,
                 zoom: S.zoom, panX: S.panX, panY: S.panY,
@@ -338,7 +338,7 @@
         if (format === 'jpg') {
             var bg = document.createElement('div');
             bg.style.cssText = 'position:absolute;top:0;left:0;width:'+bnd.w+'px;height:'+bnd.h+'px;';
-            var cc = getComputedStyle(document.documentElement).getPropertyValue('--bg-canvas').trim() || '#1e1e2e';
+            var cc = getComputedStyle(document.documentElement).getPropertyValue('--color-canvas-bg').trim() || '#1C1C20';
             bg.style.background = cc;
             wrapper.appendChild(bg);
         }
@@ -662,7 +662,7 @@
     function renderGrid() {
         var g = S.gridSize;
         var cw = S.canvasW, ch = S.canvasH;
-        var cc = getComputedStyle(document.documentElement).getPropertyValue('--bg-canvas').trim() || '#1e1e2e';
+        var cc = getComputedStyle(document.documentElement).getPropertyValue('--color-canvas-bg').trim() || '#1C1C20';
         var gridFill = '';
         if (S.showGrid) {
             gridFill = '<defs><pattern id="grid" width="'+g+'" height="'+g+'" patternUnits="userSpaceOnUse">'+
@@ -710,7 +710,7 @@
                 if (align === 'top-right' || align === 'middle-right' || align === 'bottom-right') t.style.right = pad + 'px';
                 t.textContent = s.text;
                 t.style.fontSize = s.fontSize + 'px';
-                t.style.color = s.textColor || '#1e1e2e';
+                t.style.color = s.textColor || '#111113';
                 el.appendChild(t);
             }
 
@@ -743,7 +743,7 @@
             if (!ep) return;
             var d = 'M'+ep.x1+','+ep.y1+' L'+ep.x2+','+ep.y2;
             var sel = S.selection.includes(c.id);
-            var stroke = sel ? (T.accent || '#cba6f7') : c.stroke;
+            var stroke = sel ? (T.accent || '#2563EB') : c.stroke;
             var sw = sel ? (c.sw + 1) : c.sw;
             var arrowEls = '';
             if (c.arrowStart) {
@@ -757,7 +757,7 @@
             var el = document.createElement('div');
             el.className = 'diagram-conn';
             el.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:'+connZ(c)+';pointer-events:none;';
-            el.innerHTML = '<svg style="position:absolute;top:0;left:0;width:100%;height:100%">'+
+            el.innerHTML = '<svg style="position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible">'+
                 '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none"'+
                 (sel ? ' class="conn-sel"' : '')+'/>'+arrowEls+'</svg>';
             shapesLayer.appendChild(el);
@@ -769,12 +769,12 @@
         strokeInput.value = s.stroke;
         swInput.value = s.sw;
         opacityInput.value = Math.round(s.opacity * 100);
-        textColorInput.value = s.textColor || '#1e1e2e';
+        textColorInput.value = s.textColor || '#111113';
         propFill.value = s.fill;
         propStroke.value = s.stroke;
         propSw.value = s.sw;
         propOpacity.value = Math.round(s.opacity * 100);
-        propTextColor.value = s.textColor || '#1e1e2e';
+        propTextColor.value = s.textColor || '#111113';
         propFontSize.value = s.fontSize || CONFIG.defaultFontSize;
         propTextAlign.value = s.textAlign || 'center';
         propTextPad.value = s.textPad || 0;
@@ -887,8 +887,8 @@
         var ep = getShapeOutlinePoint(shape, pos.x, pos.y);
         S.drawStart.x = ep.x;
         S.drawStart.y = ep.y;
-        var ac = T.accent || '#cba6f7';
-        previewLayer.innerHTML = '<div class="snap-highlight" style="left:'+shape.x+'px;top:'+shape.y+'px;width:'+shape.width+'px;height:'+shape.height+'px;box-shadow:0 0 0 2px '+ac+', 0 0 16px rgba(203,166,247,0.3)"></div>'+
+        var ac = T.accent || '#2563EB';
+        previewLayer.innerHTML = '<div class="snap-highlight" style="left:'+shape.x+'px;top:'+shape.y+'px;width:'+shape.width+'px;height:'+shape.height+'px;box-shadow:0 0 0 2px '+ac+', 0 0 16px rgba(37,99,235,0.3)"></div>'+
             '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+ep.x+','+ep.y+' L'+pos.x+','+pos.y+'" stroke="'+ac+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
         console.debug('startDrawingFromShape', shape.type, 'ep:', ep.x, ep.y, 'accent:', ac);
     }
@@ -1195,10 +1195,10 @@
 
                 var snapThresh3 = CONFIG.snapPx / S.zoom;
                 var nearShape = findNearestShape(pos, snapThresh3);
-                var ac3 = T.accent || '#cba6f7';
+                var ac3 = T.accent || '#2563EB';
                 var preview = '';
                 if (nearShape) {
-                    preview = '<div class="snap-highlight" style="left:'+nearShape.x+'px;top:'+nearShape.y+'px;width:'+nearShape.width+'px;height:'+nearShape.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(203,166,247,0.3)"></div>';
+                    preview = '<div class="snap-highlight" style="left:'+nearShape.x+'px;top:'+nearShape.y+'px;width:'+nearShape.width+'px;height:'+nearShape.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
                 }
                 var epLive = connEndpoints(connD);
                 preview += '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+epLive.x1+','+epLive.y1+' L'+epLive.x2+','+epLive.y2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
@@ -1242,8 +1242,8 @@
                 var y = Math.min(S.drawStart.y, sy);
                 var w = Math.abs(sx - S.drawStart.x);
                 var h = Math.abs(sy - S.drawStart.y);
-                var ac2 = T.accent || '#cba6f7';
-                previewLayer.innerHTML = '<div style="position:absolute;left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+h+'px;border:2px dashed '+ac2+';background:rgba(203,166,247,0.1)"></div>';
+                var ac2 = T.accent || '#2563EB';
+                previewLayer.innerHTML = '<div style="position:absolute;left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+h+'px;border:2px dashed '+ac2+';background:rgba(37,99,235,0.1)"></div>';
             } else {
                 // Line preview
                 var snapThresh = CONFIG.snapPx / S.zoom;
@@ -1253,10 +1253,10 @@
                 var lx2 = sx, ly2 = sy;
                 if (ss2) { var op = getShapeOutlinePoint(ss2, lx2, ly2); lx1 = op.x; ly1 = op.y; }
                 if (se2) { var op2 = getShapeOutlinePoint(se2, lx1, ly1); lx2 = op2.x; ly2 = op2.y; }
-                var ac3 = T.accent || '#cba6f7';
+                var ac3 = T.accent || '#2563EB';
                 var highlight = '';
-                if (ss2) highlight += '<div class="snap-highlight" style="left:'+ss2.x+'px;top:'+ss2.y+'px;width:'+ss2.width+'px;height:'+ss2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(203,166,247,0.3)"></div>';
-                if (se2 && se2 !== ss2) highlight += '<div class="snap-highlight" style="left:'+se2.x+'px;top:'+se2.y+'px;width:'+se2.width+'px;height:'+se2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(203,166,247,0.3)"></div>';
+                if (ss2) highlight += '<div class="snap-highlight" style="left:'+ss2.x+'px;top:'+ss2.y+'px;width:'+ss2.width+'px;height:'+ss2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
+                if (se2 && se2 !== ss2) highlight += '<div class="snap-highlight" style="left:'+se2.x+'px;top:'+se2.y+'px;width:'+se2.width+'px;height:'+se2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
                 previewLayer.innerHTML = highlight + '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+lx1+','+ly1+' L'+lx2+','+ly2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
             }
         }
@@ -1590,8 +1590,12 @@
         var html = document.documentElement;
         var isDark = html.dataset.theme !== 'light';
         html.dataset.theme = isDark ? 'light' : 'dark';
-        this.textContent = isDark ? '☾' : '☀';
-        localStorage.setItem('daigram-theme', isDark ? 'light' : 'dark');
+        // Toggle SVG icons
+        var sun = this.querySelector('.theme-sun');
+        var moon = this.querySelector('.theme-moon');
+        if (sun) sun.style.display = isDark ? 'block' : 'none';
+        if (moon) moon.style.display = isDark ? 'none' : 'block';
+        localStorage.setItem('diagram-theme', isDark ? 'light' : 'dark');
         readTheme();
         renderGrid();
         renderConns();
@@ -1601,14 +1605,15 @@
     // Panel collapse toggle
     function togglePanel() {
         var collapsed = propsPanel.classList.toggle('collapsed');
+        var svg = btnCollapse.querySelector('svg');
         if (collapsed) {
-            btnCollapse.title = 'Expand panel (Ctrl+\)';
-            btnCollapse.textContent = '«';
+            btnCollapse.title = 'Expand panel (Ctrl+\\)';
+            if (svg) svg.style.transform = 'scaleX(-1)';
         } else {
-            btnCollapse.title = 'Collapse panel (Ctrl+\)';
-            btnCollapse.textContent = '»';
+            btnCollapse.title = 'Collapse panel (Ctrl+\\)';
+            if (svg) svg.style.transform = '';
         }
-        localStorage.setItem('daigram-panel-collapsed', collapsed ? '1' : '0');
+        localStorage.setItem('diagram-panel-collapsed', collapsed ? '1' : '0');
     }
     btnCollapse.addEventListener('click', function(e) {
         e.stopPropagation();
@@ -1624,7 +1629,8 @@
     document.getElementById('log-toggle').addEventListener('click', function() {
         var panel = document.querySelector('.panel-log');
         var open = panel.classList.toggle('open');
-        this.textContent = open ? '▴' : '▾';
+        var svg = this.querySelector('svg');
+        if (svg) svg.style.transform = open ? 'rotate(180deg)' : '';
     });
 
     // ===== Toolbar style controls (apply to selected shapes) =====
@@ -2016,22 +2022,60 @@
     // ===== Init =====
     function init() {
         // Store version for about page
-        localStorage.setItem('daigram-version', VERSION);
+        localStorage.setItem('diagram-version', VERSION);
 
-        // Load theme
-        var savedTheme = localStorage.getItem('daigram-theme') || localStorage.getItem('diagramflow-theme') || 'dark';
-        document.documentElement.dataset.theme = savedTheme;
-        document.getElementById('theme-toggle').textContent = savedTheme === 'light' ? '☾' : '☀';
-        readTheme();
-
-        // Restore panel collapsed state
-        if (localStorage.getItem('daigram-panel-collapsed') === '1') {
-            propsPanel.classList.add('collapsed');
-            btnCollapse.title = 'Expand panel (Ctrl+\)';
-            btnCollapse.textContent = '«';
+        // Migrate old localStorage keys (diagramflow-* → diagram-*)
+        var oldTheme = localStorage.getItem('diagramflow-theme');
+        if (oldTheme && !localStorage.getItem('diagram-theme')) {
+            localStorage.setItem('diagram-theme', oldTheme);
+            localStorage.removeItem('diagramflow-theme');
+        }
+        var oldState = localStorage.getItem('diagramflow-state');
+        if (oldState && !localStorage.getItem('diagram-state')) {
+            localStorage.setItem('diagram-state', oldState);
+            localStorage.removeItem('diagramflow-state');
         }
 
-        var saved = localStorage.getItem('daigram-state') || localStorage.getItem('diagramflow-state');
+        // Load theme
+        var savedTheme = localStorage.getItem('diagram-theme') || 'dark';
+        document.documentElement.dataset.theme = savedTheme;
+        // Set theme toggle SVG visibility
+        (function() {
+            var toggle = document.getElementById('theme-toggle');
+            if (!toggle) return;
+            var sun = toggle.querySelector('.theme-sun');
+            var moon = toggle.querySelector('.theme-moon');
+            if (sun) sun.style.display = savedTheme === 'light' ? 'none' : 'block';
+            if (moon) moon.style.display = savedTheme === 'light' ? 'block' : 'none';
+        })();
+        readTheme();
+
+        // Cross-tab theme sync (F8)
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'diagram-theme' && e.newValue) {
+                document.documentElement.dataset.theme = e.newValue;
+                var toggle = document.getElementById('theme-toggle');
+                if (toggle) {
+                    var sun = toggle.querySelector('.theme-sun');
+                    var moon = toggle.querySelector('.theme-moon');
+                    if (sun) sun.style.display = e.newValue === 'light' ? 'none' : 'block';
+                    if (moon) moon.style.display = e.newValue === 'light' ? 'block' : 'none';
+                }
+                readTheme();
+                renderGrid();
+                renderConns();
+            }
+        });
+
+        // Restore panel collapsed state
+        if (localStorage.getItem('diagram-panel-collapsed') === '1') {
+            propsPanel.classList.add('collapsed');
+            btnCollapse.title = 'Expand panel (Ctrl+\\)';
+            var collapseSvg = btnCollapse.querySelector('svg');
+            if (collapseSvg) collapseSvg.style.transform = 'scaleX(-1)';
+        }
+
+        var saved = localStorage.getItem('diagram-state');
         if (saved) {
             try {
                 var d = JSON.parse(saved);
@@ -2070,12 +2114,12 @@
         if (!saved) {
             logAction('Creating demo diagram (no saved state found)', 'sys');
             var demos = [
-                { type:'terminator', x:400, y:80,  w:160, h:60,  text:'Start',     fill:'#e3f2fd', stroke:'#1976d2' },
-                { type:'rect',       x:370, y:220, w:220, h:70,  text:'Process',   fill:'#e8f5e9', stroke:'#388e3c' },
-                { type:'diamond',    x:410, y:380, w:140, h:140, text:'Decision?', fill:'#fff3e0', stroke:'#f57c00' },
-                { type:'rect',       x:200, y:590, w:160, h:60,  text:'Path A',    fill:'#fce4ec', stroke:'#c2185b' },
-                { type:'roundRect',  x:600, y:590, w:160, h:60,  text:'Path B',    fill:'#f3e5f5', stroke:'#7b1fa2' },
-                { type:'terminator', x:400, y:720, w:160, h:60,  text:'End',       fill:'#e0f2f1', stroke:'#00796b' }
+                { type:'terminator', x:400, y:80,  w:160, h:60,  text:'Start',     fill:'#DBEAFE', stroke:'#2563EB' },
+                { type:'rect',       x:370, y:220, w:220, h:70,  text:'Process',   fill:'#DCFCE7', stroke:'#16A34A' },
+                { type:'diamond',    x:410, y:380, w:140, h:140, text:'Decision?', fill:'#FEF3C7', stroke:'#D97706' },
+                { type:'rect',       x:200, y:590, w:160, h:60,  text:'Path A',    fill:'#FEE2E2', stroke:'#DC2626' },
+                { type:'roundRect',  x:600, y:590, w:160, h:60,  text:'Path B',    fill:'#DBEAFE', stroke:'#2563EB' },
+                { type:'terminator', x:400, y:720, w:160, h:60,  text:'End',       fill:'#DCFCE7', stroke:'#16A34A' }
             ];
             demos.forEach(function(ds) {
                 var s = addShape(ds.type, ds.x, ds.y, ds.w, ds.h);
@@ -2101,11 +2145,11 @@
 
         // Seed toolbar inputs
         fillInput.value = '#ffffff'; strokeInput.value = '#333333';
-        swInput.value = '2'; opacityInput.value = '100'; textColorInput.value = '#1e1e2e';
+        swInput.value = '2'; opacityInput.value = '100'; textColorInput.value = '#111113';
         propFill.value = '#ffffff'; propStroke.value = '#333333';
-        propSw.value = '2'; propOpacity.value = '100'; propTextColor.value = '#1e1e2e';
+        propSw.value = '2'; propOpacity.value = '100'; propTextColor.value = '#111113';
         propFontSize.value = CONFIG.defaultFontSize;
-        connColor.value = '#6c7086'; connWidth.value = '2'; connArrowStart.checked = false; connArrowEnd.checked = true;
+        connColor.value = '#94A3B8'; connWidth.value = '2'; connArrowStart.checked = false; connArrowEnd.checked = true;
 
         renderGrid(); applyTransform(); updateCursor(); render();
         canvasWidth.value = S.canvasW; canvasHeight.value = S.canvasH;

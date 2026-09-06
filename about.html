@@ -1,46 +1,53 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About daigram</title>
+    <title>About diagram</title>
+    <script>
+      (function () {
+        var saved = localStorage.getItem('diagram-theme');
+        var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
     <style>
         /* ===== Theme Variables ===== */
         :root,
         [data-theme="dark"] {
-            --bg-body: #1e1e2e;
-            --bg-card: #181825;
-            --text-body: #cdd6f4;
-            --text-muted: #6c7086;
-            --accent: #cba6f7;
-            --accent-hover: #b4befe;
-            --border: #313244;
-            --border-input: #45475a;
-            --btn-hover-bg: #313244;
-            --btn-active-bg: #45475a;
-            --code-bg: #11111b;
+            --color-bg: #0E0E10;
+            --color-surface: #1C1C20;
+            --color-text: #F2F2F3;
+            --color-text-muted: #A3A3AB;
+            --color-accent: #2563EB;
+            --color-accent-hover: #1D4ED8;
+            --color-border: #2C2C32;
+            --color-border-input: #45475A;
+            --color-btn-hover-bg: #2C2C32;
+            --color-btn-active-bg: #2C2C32;
+            --color-code-bg: #17171A;
         }
 
         [data-theme="light"] {
-            --bg-body: #f8f9fa;
-            --bg-card: #ffffff;
-            --text-body: #333333;
-            --text-muted: #888888;
-            --accent: #7c3aed;
-            --accent-hover: #8b5cf6;
-            --border: #e0e0e0;
-            --border-input: #cccccc;
-            --btn-hover-bg: #f0f0f0;
-            --btn-active-bg: #ede9fe;
-            --code-bg: #f0f0f0;
+            --color-bg: #FFFFFF;
+            --color-surface: #FFFFFF;
+            --color-text: #111113;
+            --color-text-muted: #5B5B63;
+            --color-accent: #2563EB;
+            --color-accent-hover: #1D4ED8;
+            --color-border: #E2E2E5;
+            --color-border-input: #E2E2E5;
+            --color-btn-hover-bg: #F5F5F7;
+            --color-btn-active-bg: #E2E2E5;
+            --color-code-bg: #F5F5F7;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
-            background: var(--bg-body);
-            color: var(--text-body);
+            background: var(--color-bg);
+            color: var(--color-text);
             line-height: 1.6;
             min-height: 100vh;
             transition: background 0.2s, color 0.2s;
@@ -54,14 +61,14 @@
 
         header {
             padding: 80px 0 40px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--color-border);
             margin-bottom: 48px;
         }
 
         .logo {
-            font-size: 15px;
+            font-size: 16px;
             font-weight: 700;
-            color: var(--accent);
+            color: var(--color-accent);
             letter-spacing: -0.5px;
             text-decoration: none;
             margin-bottom: 24px;
@@ -69,12 +76,12 @@
         }
 
         .logo:hover {
-            color: var(--accent-hover);
+            color: var(--color-accent-hover);
         }
 
         h1 {
             font-size: 32px;
-            color: var(--text-body);
+            color: var(--color-text);
             margin-bottom: 8px;
             font-weight: 700;
             letter-spacing: -0.5px;
@@ -83,8 +90,8 @@
         .version {
             display: inline-block;
             font-size: 13px;
-            color: var(--accent);
-            background: var(--btn-active-bg);
+            color: var(--color-accent);
+            background: var(--color-btn-active-bg);
             padding: 2px 10px;
             border-radius: 12px;
             margin-left: 8px;
@@ -94,7 +101,7 @@
 
         .subtitle {
             font-size: 16px;
-            color: var(--text-muted);
+            color: var(--color-text-muted);
             margin-bottom: 24px;
             max-width: 560px;
             margin-top: 8px;
@@ -106,22 +113,22 @@
 
         h2 {
             font-size: 20px;
-            color: var(--accent);
+            color: var(--color-accent);
             margin-bottom: 16px;
             font-weight: 600;
         }
 
         h3 {
             font-size: 16px;
-            color: var(--text-body);
+            color: var(--color-text);
             margin: 20px 0 10px;
             font-weight: 600;
         }
 
         p {
             margin-bottom: 12px;
-            color: var(--text-body);
-            font-size: 15px;
+            color: var(--color-text);
+            font-size: 16px;
         }
 
         .features-list {
@@ -131,11 +138,11 @@
 
         .features-list li {
             padding: 10px 0;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--color-border);
             display: flex;
             align-items: flex-start;
             gap: 12px;
-            font-size: 14px;
+            font-size: 16px;
         }
 
         .features-list li:last-child {
@@ -143,13 +150,13 @@
         }
 
         .features-list .label {
-            color: var(--accent);
+            color: var(--color-accent);
             font-weight: 600;
             min-width: 160px;
         }
 
         .features-list .desc {
-            color: var(--text-muted);
+            color: var(--color-text-muted);
         }
 
         .tech-list {
@@ -159,11 +166,11 @@
 
         .tech-list li {
             padding: 6px 0;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--color-border);
             display: flex;
             align-items: center;
             gap: 12px;
-            font-size: 14px;
+            font-size: 16px;
         }
 
         .tech-list li:last-child {
@@ -173,12 +180,12 @@
         .kbd {
             display: inline-block;
             padding: 2px 6px;
-            background: var(--btn-hover-bg);
-            border: 1px solid var(--border-input);
+            background: var(--color-btn-hover-bg);
+            border: 1px solid var(--color-border-input);
             border-radius: 3px;
             font-family: 'SF Mono', 'JetBrains Mono', monospace;
             font-size: 12px;
-            color: var(--text-body);
+            color: var(--color-text);
         }
 
         .shortcuts-grid {
@@ -196,21 +203,21 @@
         }
 
         .shortcut-item span {
-            color: var(--text-muted);
-            font-size: 14px;
+            color: var(--color-text-muted);
+            font-size: 16px;
         }
 
         code {
             font-family: 'SF Mono', 'JetBrains Mono', monospace;
             font-size: 13px;
-            background: var(--code-bg);
+            background: var(--color-code-bg);
             padding: 2px 6px;
             border-radius: 3px;
-            color: var(--accent);
+            color: var(--color-accent);
         }
 
         pre {
-            background: var(--code-bg);
+            background: var(--color-code-bg);
             padding: 12px 16px;
             border-radius: 6px;
             overflow-x: auto;
@@ -220,18 +227,18 @@
         pre code {
             background: none;
             padding: 0;
-            color: var(--text-body);
+            color: var(--color-text);
         }
 
         footer {
             padding: 32px 0;
-            border-top: 1px solid var(--border);
-            color: var(--text-muted);
+            border-top: 1px solid var(--color-border);
+            color: var(--color-text-muted);
             font-size: 13px;
         }
 
         footer a {
-            color: var(--accent);
+            color: var(--color-accent);
             text-decoration: none;
         }
 
@@ -245,20 +252,20 @@
 
         .footer-links span {
             margin: 0 8px;
-            color: var(--border-input);
+            color: var(--color-border-input);
         }
 
         .tip {
-            background: var(--btn-active-bg);
+            background: var(--color-btn-active-bg);
             padding: 12px 16px;
             border-radius: 6px;
-            font-size: 14px;
-            color: var(--text-muted);
+            font-size: 16px;
+            color: var(--color-text-muted);
             margin: 12px 0;
         }
 
         .tip strong {
-            color: var(--text-body);
+            color: var(--color-text);
         }
 
         /* Theme toggle button */
@@ -266,10 +273,10 @@
             position: fixed;
             top: 16px;
             right: 16px;
-            width: 36px; height: 36px;
-            border: 1px solid var(--border-input);
-            background: var(--bg-card);
-            color: var(--text-body);
+            width: 44px; height: 44px;
+            border: 1px solid var(--color-border-input);
+            background: var(--color-surface);
+            color: var(--color-text);
             border-radius: 6px;
             cursor: pointer;
             font-size: 18px;
@@ -281,7 +288,43 @@
         }
 
         .theme-toggle:hover {
-            background: var(--btn-hover-bg);
+            background: var(--color-btn-hover-bg);
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+        }
+
+        /* ===== Global Focus States ===== */
+        :focus-visible {
+            outline: 2px solid var(--color-accent);
+            outline-offset: 2px;
+        }
+
+        /* ===== Reduced Motion ===== */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            z-index: 10000;
+            padding: 8px 16px;
+            background: var(--color-accent);
+            color: #fff;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 0 0 4px 0;
+        }
+        .skip-link:focus {
+            top: 0;
         }
 
         /* Version history */
@@ -291,7 +334,7 @@
 
         .changelog-entry {
             padding: 14px 0;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--color-border);
         }
 
         .changelog-entry:last-child {
@@ -300,12 +343,12 @@
 
         .changelog-entry .ver {
             font-weight: 700;
-            color: var(--accent);
-            font-size: 15px;
+            color: var(--color-accent);
+            font-size: 16px;
         }
 
         .changelog-entry .date {
-            color: var(--text-muted);
+            color: var(--color-text-muted);
             font-size: 13px;
             margin-left: 8px;
         }
@@ -316,25 +359,31 @@
         }
 
         .changelog-entry li {
-            font-size: 14px;
-            color: var(--text-muted);
+            font-size: 16px;
+            color: var(--color-text-muted);
             padding: 2px 0;
         }
 
         .changelog-entry li::before {
             content: '\2022';
-            color: var(--accent);
+            color: var(--color-accent);
             margin-right: 8px;
         }
     </style>
 </head>
 <body>
-    <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">☀</button>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="theme-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <svg class="theme-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+    </button>
 
-    <div class="container">
+    <div class="container" id="main-content">
         <header>
-            <a href="index.html" class="logo">&#9699; daigram</a>
-            <h1>daigram <span class="version" id="version-display">v1.0.0</span></h1>
+            <div class="header-row">
+                <a href="index.html" class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4"/></svg> <span>diagram</span></a>
+            </div>
+            <h1>diagram <span class="version" id="version-display">v1.1.0</span></h1>
             <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
         </header>
 
@@ -413,7 +462,7 @@
                 <li><strong>Rendering:</strong>&nbsp;&nbsp;DOM-based shapes with inline SVG</li>
                 <li><strong>Input:</strong>&nbsp;&nbsp;Pointer Events API (unified mouse + touch + pen)</li>
                 <li><strong>State:</strong>&nbsp;&nbsp;Centralized state object with undo/redo (50 steps)</li>
-                <li><strong>Theme:</strong>&nbsp;&nbsp;Catppuccin Mocha dark color scheme with light mode toggle</li>
+                <li><strong>Theme:</strong>&nbsp;&nbsp;Free Open Tools ecosystem dark/light scheme with toggle</li>
                 <li><strong>Canvas:</strong>&nbsp;&nbsp;10,000 x 10,000 px grid layer</li>
                 <li><strong>Zoom:</strong>&nbsp;&nbsp;Mouse wheel zoom (0.1x to 5x) + pinch-to-zoom</li>
             </ul>
@@ -422,6 +471,18 @@
         <section>
             <h2>Version History</h2>
             <div class="changelog">
+                <div class="changelog-entry">
+                    <span class="ver">1.1.0</span><span class="date">current</span>
+                    <ul>
+                        <li>Ecosystem spacing/radius/shadow tokens (F2/F3/F4)</li>
+                        <li>Normalized all tool icons to 24×24 viewBox (F1)</li>
+                        <li>aria-live on action log (F5)</li>
+                        <li>Canvas aria-label and role (F6)</li>
+                        <li>Cross-tab theme sync via storage event (F8)</li>
+                        <li>localStorage key migration: diagramflow-* → diagram-* (F10)</li>
+                        <li>Updated documentation to v1.1 (STYLE_GUIDE, reconciliation, README, REVIEW)</li>
+                    </ul>
+                </div>
                 <div class="changelog-entry">
                     <span class="ver">1.0.0</span><span class="date">Sep 6, 2025</span>
                     <ul>
@@ -445,7 +506,7 @@
                         <li>Shape naming, connection naming, action log</li>
                         <li>Text alignment and padding controls</li>
                         <li>Connection endpoint dragging with smart snap</li>
-                        <li>Catppuccin Mocha dark theme with light mode toggle</li>
+                        <li>Free Open Tools ecosystem dark/light theme with toggle</li>
                         <li>About page</li>
                     </ul>
                 </div>
@@ -473,8 +534,9 @@
         </section>
 
         <footer>
-            <p>daigram &mdash; a lightweight diagram editor</p>
+            <p>diagram &mdash; a lightweight diagram editor</p>
             <div class="footer-links">
+                <a href="https://freeopentools.com/">Free Open Tools</a><span>&middot;</span>
                 <a href="index.html">Open Editor</a><span>&middot;</span>
                 <a href="README.md">README</a>
             </div>
@@ -483,21 +545,29 @@
 
     <script>
     (function() {
-        // Theme
-        var savedTheme = localStorage.getItem('daigram-theme') || 'dark';
-        document.documentElement.dataset.theme = savedTheme;
+        // Theme toggle (theme is already set by inline script in <head>)
         var toggleBtn = document.getElementById('theme-toggle');
-        toggleBtn.textContent = savedTheme === 'light' ? '☾' : '☀';
+        var currentTheme = document.documentElement.dataset.theme || 'dark';
+        // Set SVG visibility
+        (function() {
+            var sun = toggleBtn.querySelector('.theme-sun');
+            var moon = toggleBtn.querySelector('.theme-moon');
+            if (sun) sun.style.display = currentTheme === 'light' ? 'none' : 'block';
+            if (moon) moon.style.display = currentTheme === 'light' ? 'block' : 'none';
+        })();
         toggleBtn.addEventListener('click', function() {
             var isDark = document.documentElement.dataset.theme !== 'light';
             var newTheme = isDark ? 'light' : 'dark';
             document.documentElement.dataset.theme = newTheme;
-            toggleBtn.textContent = newTheme === 'light' ? '☾' : '☀';
-            localStorage.setItem('daigram-theme', newTheme);
+            var sun = toggleBtn.querySelector('.theme-sun');
+            var moon = toggleBtn.querySelector('.theme-moon');
+            if (sun) sun.style.display = isDark ? 'block' : 'none';
+            if (moon) moon.style.display = isDark ? 'none' : 'block';
+            localStorage.setItem('diagram-theme', newTheme);
         });
 
         // Version
-        var version = localStorage.getItem('daigram-version') || '1.0.0';
+        var version = localStorage.getItem('diagram-version') || '1.1.0';
         document.getElementById('version-display').textContent = 'v' + version;
     })();
     </script>

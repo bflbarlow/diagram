@@ -1,4 +1,6 @@
-# DiagramFlow
+# Diagram — v1.1
+
+Part of the [Free Open Tools](https://freeopentools.com/) ecosystem — a suite of browser-based utilities.
 
 A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript — no dependencies, no build step. Create flowcharts and diagrams directly in the browser.
 
@@ -15,8 +17,9 @@ A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript — no
 - **Zoom & Pan**: Mouse wheel zoom, middle-mouse drag to pan
 - **Grid & Snap**: Toggleable grid with snap-to-grid
 - **Context Menu**: Right-click for duplicate, delete, reorder, and lock/unlock
-- **Persistence**: Auto-saved to `localStorage` (survives page reload)
+- **Persistence**: Auto-saved to `localStorage` (survives page reload); legacy `diagramflow-*` keys migrated automatically
 - **Keyboard Shortcuts**: Full tool switching and editing shortcuts
+- **Accessibility**: Focus-visible outlines, skip-to-content link, aria-live action log, canvas aria-label, 44×44px touch targets, 16px minimum font sizes, WCAG AA contrast
 
 ## Getting Started
 
@@ -110,24 +113,35 @@ Create custom shapes by pasting SVG code:
 ## File Structure
 
 ```
-chart/
-├── index.html    # Markup: toolbar, canvas layers, properties panel
-├── about.html    # About page with documentation and launch link
-├── styles.css    # All styles (Catppuccin Mocha dark theme)
-├── app.js        # Application logic (state, rendering, events)
-└── REVIEW.md     # Technical review and maintenance plan
+diagram/
+├── index.html                 # Main application HTML
+├── about.html                 # About page with documentation
+├── styles.css                 # All styles (ecosystem dark/light theme)
+├── app.js                     # Application logic (state, rendering, events)
+├── STYLE_GUIDE.md             # Project style guide (v1.1)
+├── STYLE_GUIDE_RECONCILIATION.md  # Compliance reconciliation (all items resolved)
+├── REVIEW.md                  # Technical review and maintenance plan
+├── README.md                  # This file
+├── vendor/                    # Vendored dependencies
+│   ├── html2canvas.min.js
+│   └── jspdf.umd.min.js
 ```
 
 ## Technical Details
 
+- **Version**: 1.1.0
 - **Framework**: Vanilla JavaScript (ES5-compatible), no dependencies
 - **Rendering**: DOM-based shapes with inline SVG; connections rendered as SVG paths
 - **Custom SVG**: Supports pasting SVG code with auto-detected viewBox or manual viewBox controls
 - **Line Snapping**: Lines snap to nearby shape edges within 16px (at 100% zoom)
-- **State**: Centralized `S` state object with a unified selection model and undo/redo stacks
-- **Theme**: Catppuccin Mocha dark color scheme with light mode toggle
+- **State**: Centralized `S` state object with undo/redo stacks (50 steps)
+- **Theme**: Free Open Tools ecosystem dark/light scheme with toggle; cross-tab sync
+- **CSS Tokens**: Ecosystem spacing (`--space-*`), radius (`--radius-*`), and shadow (`--shadow-*`) tokens throughout
+- **Icons**: All tool icons normalized to 24×24 viewBox with `stroke="currentColor"` and `stroke-width="2"`
+- **Accessibility**: Skip-to-content link, `:focus-visible` outlines, `aria-live` action log, canvas `aria-label`, 44×44px touch targets, 16px minimum body font
 - **Canvas**: Effectively unbounded; grid layer is 10,000 × 10,000 px
-- **Persistence**: JSON serialized to `localStorage` on page unload
+- **Persistence**: JSON serialized to `localStorage` (key: `diagram-state`) on every state change; legacy `diagramflow-*` keys migrated on load
+- **Dependencies**: `html2canvas` and `jspdf` vendored locally in `vendor/` for export (PNG, JPG, PDF)
 
 ## Browser Support
 
@@ -136,4 +150,4 @@ Works in all modern browsers (Chrome/Edge, Firefox, Safari).
 ## License
 
 Private project.
-# daigram
+# diagram
