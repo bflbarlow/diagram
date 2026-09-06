@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About diagram</title>
+    <style>
+        :root {
+            --bg-body: #1e1e2e;
+            --bg-card: #181825;
+            --text-body: #cdd6f4;
+            --text-muted: #6c7086;
+            --accent: #cba6f7;
+            --accent-hover: #b4befe;
+            --border: #313244;
+            --border-input: #45475a;
+            --btn-hover-bg: #313244;
+            --btn-active-bg: #45475a;
+            --code-bg: #11111b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+            background: var(--bg-body);
+            color: var(--text-body);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            padding: 80px 0 40px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 48px;
+        }
+
+        .logo {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.5px;
+            text-decoration: none;
+            margin-bottom: 24px;
+            display: inline-block;
+        }
+
+        .logo:hover {
+            color: var(--accent-hover);
+        }
+
+        h1 {
+            font-size: 32px;
+            color: var(--text-body);
+            margin-bottom: 12px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            font-size: 16px;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+            max-width: 560px;
+        }
+
+        .btn-launch {
+            display: inline-block;
+            padding: 10px 24px;
+            background: var(--accent);
+            color: var(--bg-body);
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.15s;
+        }
+
+        .btn-launch:hover {
+            background: var(--accent-hover);
+        }
+
+        section {
+            margin-bottom: 48px;
+        }
+
+        h2 {
+            font-size: 20px;
+            color: var(--accent);
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        h3 {
+            font-size: 16px;
+            color: var(--text-body);
+            margin: 20px 0 10px;
+            font-weight: 600;
+        }
+
+        p {
+            margin-bottom: 12px;
+            color: var(--text-body);
+            font-size: 15px;
+        }
+
+        .features-list {
+            list-style: none;
+            margin: 16px 0;
+        }
+
+        .features-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 14px;
+        }
+
+        .features-list li:last-child {
+            border-bottom: none;
+        }
+
+        .features-list .label {
+            color: var(--accent);
+            font-weight: 600;
+            min-width: 140px;
+        }
+
+        .features-list .desc {
+            color: var(--text-muted);
+        }
+
+        .tech-list {
+            list-style: none;
+            margin: 16px 0;
+        }
+
+        .tech-list li {
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+
+        .tech-list li:last-child {
+            border-bottom: none;
+        }
+
+        .kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            background: var(--btn-hover-bg);
+            border: 1px solid var(--border-input);
+            border-radius: 3px;
+            font-family: 'SF Mono', 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-body);
+        }
+
+        .shortcuts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 6px;
+            margin: 12px 0;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+        }
+
+        .shortcut-item span {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        code {
+            font-family: 'SF Mono', 'JetBrains Mono', monospace;
+            font-size: 13px;
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: var(--accent);
+        }
+
+        pre {
+            background: var(--code-bg);
+            padding: 12px 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-body);
+        }
+
+        footer {
+            padding: 32px 0;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            margin-top: 12px;
+        }
+
+        .footer-links span {
+            margin: 0 8px;
+            color: var(--border-input);
+        }
+
+        .tip {
+            background: var(--btn-active-bg);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            color: var(--text-muted);
+            margin: 12px 0;
+        }
+
+        .tip strong {
+            color: var(--text-body);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <a href="index.html" class="logo">&#9699; diagram</a>
+            <h1>diagram</h1>
+            <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
+            <a href="index.html" class="btn-launch">Launch App</a>
+        </header>
+
+        <section>
+            <h2>Features</h2>
+            <ul class="features-list">
+                <li>
+                    <span class="label">Shape Tools</span>
+                    <span class="desc">Rectangle, rounded rectangle, circle, diamond, triangle, terminator, and custom SVG shapes.</span>
+                </li>
+                <li>
+                    <span class="label">Connections</span>
+                    <span class="desc">Draw lines and arrows between shapes with smart snapping and endpoint dragging.</span>
+                </li>
+                <li>
+                    <span class="label">Custom SVG</span>
+                    <span class="desc">Paste your own SVG code to create custom shapes with full viewBox control.</span>
+                </li>
+                <li>
+                    <span class="label">Text Labels</span>
+                    <span class="desc">Add floating text to shapes with adjustable font size, color, and alignment.</span>
+                </li>
+                <li>
+                    <span class="label">Auto-Save</span>
+                    <span class="desc">Work is automatically saved to localStorage and survives page reloads.</span>
+                </li>
+                <li>
+                    <span class="label">Keyboard Shortcuts</span>
+                    <span class="desc">Full keyboard navigation and editing shortcuts for power users.</span>
+                </li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Quick Start</h2>
+            <h3>Creating Shapes</h3>
+            <p>Click a shape button in the toolbar, then click on the canvas to place it. Drag handles to resize, drag the body to move.</p>
+
+            <h3>Drawing Connections</h3>
+            <p>Select the Line tool (L), click and drag from one shape to another. Lines snap to shape edges automatically.</p>
+
+            <h3>Adding Custom SVG Shapes</h3>
+            <p>Click the Custom Shape button (last button in the toolbar), click on the canvas, then paste your SVG code into the Custom SVG textarea in the properties panel. Adjust the ViewBox Width and Height to match your SVG's coordinate space.</p>
+
+            <div class="tip">
+                <strong>Tip:</strong> If your SVG doesn't have a wrapping <code>&lt;svg&gt;</code> tag, the app defaults to a 100x100 coordinate space. Use the ViewBox fields to adjust if needed.
+            </div>
+        </section>
+
+        <section>
+            <h2>Keyboard Shortcuts</h2>
+            <div class="shortcuts-grid">
+                <div class="shortcut-item"><span class="kbd">V</span> <span>Select tool</span></div>
+                <div class="shortcut-item"><span class="kbd">L</span> <span>Line tool</span></div>
+                <div class="shortcut-item"><span class="kbd">T</span> <span>Text tool</span></div>
+                <div class="shortcut-item"><span class="kbd">G</span> <span>Toggle grid</span></div>
+                <div class="shortcut-item"><span class="kbd">S</span> <span>Toggle snap</span></div>
+                <div class="shortcut-item"><span class="kbd">Ctrl+Z</span> <span>Undo</span></div>
+                <div class="shortcut-item"><span class="kbd">Ctrl+Y</span> <span>Redo</span></div>
+                <div class="shortcut-item"><span class="kbd">Ctrl+D</span> <span>Duplicate</span></div>
+                <div class="shortcut-item"><span class="kbd">Delete</span> <span>Delete selected</span></div>
+                <div class="shortcut-item"><span class="kbd">Enter</span> <span>Edit text</span></div>
+                <div class="shortcut-item"><span class="kbd">+</span> <span class="kbd">-</span> <span>Zoom in/out</span></div>
+                <div class="shortcut-item"><span class="kbd">Esc</span> <span>Deselect</span></div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Technical Details</h2>
+            <ul class="tech-list">
+                <li><strong>Framework:</strong>&nbsp;&nbsp;Vanilla JavaScript (ES5-compatible), no dependencies</li>
+                <li><strong>Rendering:</strong>&nbsp;&nbsp;DOM-based shapes with inline SVG</li>
+                <li><strong>State:</strong>&nbsp;&nbsp;Centralized state object with undo/redo (50 steps)</li>
+                <li><strong>Theme:</strong>&nbsp;&nbsp;Catppuccin Mocha dark color scheme with light mode toggle</li>
+                <li><strong>Canvas:</strong>&nbsp;&nbsp;10,000 x 10,000 px grid layer</li>
+                <li><strong>Zoom:</strong>&nbsp;&nbsp;Mouse wheel zoom (0.1x to 5x)</li>
+            </ul>
+        </section>
+
+        <footer>
+            <p>diagram &mdash; a lightweight diagram editor</p>
+            <div class="footer-links">
+                <a href="index.html">Launch App</a><span>&middot;</span>
+                <a href="README.md">README</a><span>&middot;</span>
+                <a href="REVIEW.md">Technical Review</a>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
