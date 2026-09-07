@@ -31,6 +31,9 @@
         </button>
         <div class="toolbar-divider"></div>
 
+        <button class="tool-btn" id="btn-new" title="New Canvas"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+        <button class="tool-btn" id="btn-save-file" title="Save Project (.json)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></button>
+        <button class="tool-btn" id="btn-load-file" title="Import Project (.json)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg></button>
         <div class="export-wrap">
             <button class="tool-btn-primary" id="btn-export" title="Export"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
             <div class="export-drop" id="export-drop">
@@ -42,8 +45,6 @@
                 <div class="export-item" data-action="export-pdf-full">PDF (full canvas)</div>
             </div>
         </div>
-        <button class="tool-btn" id="btn-save-file" title="Save Project (.json)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></button>
-        <button class="tool-btn" id="btn-load-file" title="Load Project (.json)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg></button>
         <div class="toolbar-divider"></div>
 
         <button class="tool-btn active" data-tool="select" title="Select (V)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg></button>
@@ -151,6 +152,7 @@
             <h4>Style</h4>
             <div class="prop-row"><label>Fill <input type="color" id="prop-fill"></label><label>Outline <input type="color" id="prop-stroke"></label></div>
             <div class="prop-row"><label>Outline W <input type="number" id="prop-sw" min="0" max="20"></label><label>Opacity <input type="number" id="prop-opacity" min="10" max="100"></label></div>
+            <div class="prop-row"><label>Fill Op <input type="number" id="prop-fillOpacity" min="0" max="100" value="100" title="Fill opacity (0-100)"></label><label>Stroke Op <input type="number" id="prop-strokeOpacity" min="0" max="100" value="100" title="Stroke opacity (0-100)"></label></div>
             <div class="prop-row"><label>Text Color <input type="color" id="prop-textColor"></label></div>
         </div>
 

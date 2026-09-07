@@ -5,7 +5,7 @@
     'use strict';
 
     // ===== Version =====
-    var VERSION = '1.1.1';  // v1.1.1: two-finger pan fix, panel resize handle, collapse visibility
+    var VERSION = '1.1.2';  // v1.1.2: priority attachment ports, connection-over-shape click, syntax fix
 
     // ===== Configuration =====
     var CONFIG = {
@@ -110,6 +110,8 @@
     var propStroke     = document.getElementById('prop-stroke');
     var propSw         = document.getElementById('prop-sw');
     var propOpacity    = document.getElementById('prop-opacity');
+    var propFillOpacity  = document.getElementById('prop-fillOpacity');
+    var propStrokeOpacity = document.getElementById('prop-strokeOpacity');
     var propTextColor  = document.getElementById('prop-textColor');
     var propX          = document.getElementById('prop-x');
     var propY          = document.getElementById('prop-y');
@@ -127,6 +129,7 @@
     var btnSaveFile    = document.getElementById('btn-save-file');
     var btnLoadFile    = document.getElementById('btn-load-file');
     var btnExport      = document.getElementById('btn-export');
+    var btnNew         = document.getElementById('btn-new');
     var exportDrop     = document.getElementById('export-drop');
 
     // Props panel — connection
@@ -253,12 +256,44 @@
         }
     }
 
+    /** Returns the 8 priority connection ports (corners + edge midpoints) for a shape,
+     *  as an array of {x, y, name} in canvas coordinates. */
+    function shapePorts(s) {
+        var x1 = s.x, y1 = s.y, x2 = s.x + s.width, y2 = s.y + s.height;
+        var cx = s.x + s.width / 2, cy = s.y + s.height / 2;
+        return [
+            { x: x1, y: y1,   name: 'top-left' },
+            { x: cx, y: y1,   name: 'top-center' },
+            { x: x2, y: y1,   name: 'top-right' },
+            { x: x1, y: cy,   name: 'middle-left' },
+            { x: x2, y: cy,   name: 'middle-right' },
+            { x: x1, y: y2,   name: 'bottom-left' },
+            { x: cx, y: y2,   name: 'bottom-center' },
+            { x: x2, y: y2,   name: 'bottom-right' }
+        ];
+    }
+
+    /** Finds the nearest port on a shape within threshold px (canvas coords). Returns
+     *  { port, dist } or null if none within range. */
+    function nearestPort(pos, shape, threshold) {
+        var best = null, bestDist = threshold;
+        shapePorts(shape).forEach(function(p) {
+            var d = Math.sqrt((pos.x - p.x)*(pos.x - p.x) + (pos.y - p.y)*(pos.y - p.y));
+            if (d < bestDist) { bestDist = d; best = p; }
+        });
+        return best ? { port: best, dist: bestDist } : null;
+    }
+
     /** Returns the nearest non-anchor shape whose outline is within px of pos, or null.
      *  Points inside the shape always match (distance = 0). */
     function findNearestShape(pos, px) {
         var best = null, bestDist = px;
-        S.shapes.forEach(function(s) {
-            if (s.isAnchor) return;
+        // Sort shapes by z-height descending (topmost first) to respect layering
+        var sorted = S.shapes.slice().sort(function(a, b) {
+            return ((b.zHeight || 0) - (a.zHeight || 0)) || S.shapes.indexOf(b) - S.shapes.indexOf(a);
+        });
+        sorted.forEach(function(s) {
+            if (s.isAnchor || s.hidden) return;
             var inside = pos.x >= s.x && pos.x <= s.x + s.width &&
                          pos.y >= s.y && pos.y <= s.y + s.height;
             var left = s.x - px, right = s.x + s.width + px;
@@ -460,6 +495,8 @@
             fill: fillInput.value, stroke: strokeInput.value,
             sw: parseInt(swInput.value) || 0,
             opacity: parseInt(opacityInput.value) / 100,
+            fillOpacity: 1,
+            strokeOpacity: 1,
             textColor: textColorInput.value,
             textAlign: 'center',
             locked: false, fontSize: CONFIG.defaultFontSize,
@@ -554,28 +591,30 @@
     // ===== SVG generators =====
     function shapeSVG(s) {
         var w = s.width, h = s.height, fc = s.fill, sc = s.stroke, sw = s.sw;
+        var fo = (s.fillOpacity != null ? s.fillOpacity : 1);
+        var so = (s.strokeOpacity != null ? s.strokeOpacity : 1);
         var o = sw ? sw / 2 : 0;  // half-stroke inset so strokes don't clip
         // Full-size fill + inset stroke shape so outlines are fully visible within bounds
         switch (s.type) {
             case 'rect':
-                return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'"/>' +
-                       (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-width="'+sw+'" rx="2"/>' : '');
+                return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'" fill-opacity="'+fo+'"/>' +
+                       (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-opacity="'+so+'" stroke-width="'+sw+'" rx="2"/>' : '');
             case 'roundRect':
-                return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'"/>' +
-                       (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-width="'+sw+'" rx="8"/>' : '');
+                return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'" rx="8" fill-opacity="'+fo+'"/>' +
+                       (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-opacity="'+so+'" stroke-width="'+sw+'" rx="8"/>' : '');
             case 'circle':
-                return '<ellipse cx="'+(w/2)+'" cy="'+(h/2)+'" rx="'+(w/2)+'" ry="'+(h/2)+'" fill="'+fc+'"/>' +
-                       (sw ? '<ellipse cx="'+(w/2)+'" cy="'+(h/2)+'" rx="'+(w/2-o)+'" ry="'+(h/2-o)+'" fill="none" stroke="'+sc+'" stroke-width="'+sw+'"/>' : '');
+                return '<ellipse cx="'+(w/2)+'" cy="'+(h/2)+'" rx="'+(w/2)+'" ry="'+(h/2)+'" fill="'+fc+'" fill-opacity="'+fo+'"/>' +
+                       (sw ? '<ellipse cx="'+(w/2)+'" cy="'+(h/2)+'" rx="'+(w/2-o)+'" ry="'+(h/2-o)+'" fill="none" stroke="'+sc+'" stroke-opacity="'+so+'" stroke-width="'+sw+'"/>' : '');
             case 'diamond':
-                return '<polygon points="'+(w/2)+',0 '+w+','+(h/2)+' '+(w/2)+','+h+' 0,'+(h/2)+'" fill="'+fc+'"/>' +
-                       (sw ? '<polygon points="'+(w/2)+','+o+' '+(w-o)+','+(h/2)+' '+(w/2)+','+(h-o)+' '+o+','+(h/2)+'" fill="none" stroke="'+sc+'" stroke-width="'+sw+'"/>' : '');
+                return '<polygon points="'+(w/2)+',0 '+w+','+(h/2)+' '+(w/2)+','+h+' 0,'+(h/2)+'" fill="'+fc+'" fill-opacity="'+fo+'"/>' +
+                       (sw ? '<polygon points="'+(w/2)+','+o+' '+(w-o)+','+(h/2)+' '+(w/2)+','+(h-o)+' '+o+','+(h/2)+'" fill="none" stroke="'+sc+'" stroke-opacity="'+so+'" stroke-width="'+sw+'"/>' : '');
             case 'triangle':
-                return '<polygon points="'+(w/2)+',0 '+w+','+h+' 0,'+h+'" fill="'+fc+'"/>' +
-                       (sw ? '<polygon points="'+(w/2)+','+o+' '+(w-o)+','+(h-o)+' '+o+','+(h-o)+'" fill="none" stroke="'+sc+'" stroke-width="'+sw+'"/>' : '');
+                return '<polygon points="'+(w/2)+',0 '+w+','+h+' 0,'+h+'" fill="'+fc+'" fill-opacity="'+fo+'"/>' +
+                       (sw ? '<polygon points="'+(w/2)+','+o+' '+(w-o)+','+(h-o)+' '+o+','+(h-o)+'" fill="none" stroke="'+sc+'" stroke-opacity="'+so+'" stroke-width="'+sw+'"/>' : '');
             case 'terminator':
                 var rx = h/2;
-                return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'" rx="'+rx+'"/>' +
-                       (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-width="'+sw+'" rx="'+(rx-o)+'"/>' : '');
+                return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'" rx="'+rx+'" fill-opacity="'+fo+'"/>' +
+                       (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-opacity="'+so+'" stroke-width="'+sw+'" rx="'+(rx-o)+'"/>' : '');
             case 'custom':
                 var inner = (s.customSvg || '').trim();
                 var cw = s.customW || (inner ? 100 : w);
@@ -839,6 +878,8 @@
         propStroke.value = s.stroke;
         propSw.value = s.sw;
         propOpacity.value = Math.round(s.opacity * 100);
+        if (propFillOpacity) propFillOpacity.value = Math.round((s.fillOpacity != null ? s.fillOpacity : 1) * 100);
+        if (propStrokeOpacity) propStrokeOpacity.value = Math.round((s.strokeOpacity != null ? s.strokeOpacity : 1) * 100);
         propTextColor.value = s.textColor || '#111113';
         propFontSize.value = s.fontSize || CONFIG.defaultFontSize;
         propTextAlign.value = s.textAlign || 'center';
@@ -1073,6 +1114,22 @@
                         e.preventDefault();
                         container.setPointerCapture(e.pointerId);
                         return;
+                    } else {
+                        // Connection body over shape — drag the connection, not the shape
+                        select(interceptConn.id, e.shiftKey);
+                        S.isDraggingConn = true;
+                        S.dragConnId = interceptConn.id;
+                        S.dragStart = { x: pos.x, y: pos.y };
+                        S.dragConnEnd = null;
+                        var _fa = findShape(interceptConn.from), _fb = findShape(interceptConn.to);
+                        S.dragConnAnchors = [
+                            (_fa && _fa.isAnchor) ? { x: _fa.x, y: _fa.y } : null,
+                            (_fb && _fb.isAnchor) ? { x: _fb.x, y: _fb.y } : null
+                        ];
+                        console.debug('intercepted shape click for conn body drag');
+                        e.preventDefault();
+                        container.setPointerCapture(e.pointerId);
+                        return;
                     }
                 }
             }
@@ -1176,12 +1233,52 @@
         console.debug('line tool: drawing from empty canvas at', sx, sy);
         e.preventDefault();
         container.setPointerCapture(e.pointerId);
-    });
+        return;
+    // Long-press timer for touch right-click — only for touch, when nothing grabbed
+    if (e.pointerType === 'touch' && S.tool === 'select' && S.pinchStart === null && !textEditor.classList.contains('visible')) {
+        S._longPressStart = { x: e.clientX, y: e.clientY };
+        S._longPressTimer = setTimeout(function() {
+            var lx = S._longPressStart.x, ly = S._longPressStart.y;
+            var els = [].slice.call(shapesLayer.querySelectorAll('.diagram-shape')).reverse();
+            var found = false;
+            for (var li = 0; li < els.length; li++) {
+                var lr = els[li].getBoundingClientRect();
+                if (lx >= lr.left && lx <= lr.right && ly >= lr.top && ly <= lr.bottom) {
+                    var lsid = els[li].dataset.id;
+                    if (!S.selection.includes(lsid)) select(lsid);
+                    contextMenu.style.left = lx + 'px';
+                    contextMenu.style.top = ly + 'px';
+                    contextMenu.classList.remove('hidden');
+                    found = true; break;
+                }
+            }
+            if (!found) {
+                var lpos = toCanvas(lx, ly);
+                var lconn = findConnAt(lpos);
+                if (lconn) {
+                    if (!S.selection.includes(lconn.id)) select(lconn.id);
+                    contextMenu.style.left = lx + 'px';
+                    contextMenu.style.top = ly + 'px';
+                    contextMenu.classList.remove('hidden');
+                }
+            }
+            delete S._longPressTimer;
+            delete S._longPressStart;
+        }, 500);
+    }
+});
 
     // ===== Pointer: pointermove (unified mouse + touch) =====
     container.addEventListener('pointermove', function(e) {
         // Update pointer tracking for pinch
         S.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+
+        // Cancel long-press if finger moved too far
+        if (S._longPressStart && (Math.abs(e.clientX - S._longPressStart.x) > 12 || Math.abs(e.clientY - S._longPressStart.y) > 12)) {
+            clearTimeout(S._longPressTimer);
+            delete S._longPressTimer;
+            delete S._longPressStart;
+        }
 
         // Handle pinch-to-zoom + two-finger pan
         if (S.pinchStart && Object.keys(S.pointers).length >= 2) {
@@ -1270,8 +1367,18 @@
                 var nearShape = findNearestShape(pos, snapThresh3);
                 var ac3 = T.accent || '#2563EB';
                 var preview = '';
+                var portR = 14 / S.zoom; // port snap radius in canvas coords
                 if (nearShape) {
                     preview = '<div class="snap-highlight" style="left:'+nearShape.x+'px;top:'+nearShape.y+'px;width:'+nearShape.width+'px;height:'+nearShape.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
+                    // Draw 8 port indicators
+                    var ports = shapePorts(nearShape);
+                    var draggedEp = endId === connD.from ? { x: pos.x, y: pos.y } : { x: pos.x, y: pos.y };
+                    if (endShape && endShape.isAnchor) { draggedEp.x = endShape.x + 5; draggedEp.y = endShape.y + 5; }
+                    var nearPort = nearestPort(draggedEp, nearShape, portR);
+                    ports.forEach(function(p) {
+                        var isNearest = nearPort && p.x === nearPort.port.x && p.y === nearPort.port.y;
+                        preview += '<div style="position:absolute;left:'+(p.x-4)+'px;top:'+(p.y-4)+'px;width:8px;height:8px;border-radius:50%;border:2px solid '+ac3+';background:'+(isNearest ? ac3 : 'transparent')+';opacity:'+(isNearest ? '1' : '0.5')+'"></div>';
+                    });
                 }
                 var epLive = connEndpoints(connD);
                 preview += '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+epLive.x1+','+epLive.y1+' L'+epLive.x2+','+epLive.y2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
@@ -1337,6 +1444,12 @@
 
     // ===== Pointer: pointerup (unified mouse + touch) =====
     container.addEventListener('pointerup', function(e) {
+        // Cancel long-press timer on finger lift
+        if (S._longPressTimer) {
+            clearTimeout(S._longPressTimer);
+            delete S._longPressTimer;
+            delete S._longPressStart;
+        }
         // Clean up pointer tracking
         delete S.pointers[e.pointerId];
 
@@ -1377,15 +1490,25 @@
                     if (es && !es.isAnchor && es.id === snapShape.id) {
                         // Click without drag — attachment already locked via fromRel/toRel
                     } else {
-                        // Compute the outline point where we attach, then store relative offset
-                        var outlinePt = getShapeOutlinePoint(snapShape, epX, epY);
-                        var rel = absToRel(snapShape, outlinePt);
-                        cd[endKey] = snapShape.id;
-                        if (endKey === 'from') cd.fromRel = rel;
-                        else cd.toRel = rel;
-                        if (es && es.isAnchor) { deleteShape(es.id); }
-                        logAction('Attached '+connName(cd.id)+' '+endKey+' to '+shapeName(snapShape.id), 'move');
-                        console.debug('conn endpoint snapped to shape', snapShape.id, 'rel:', rel);
+                        // Check for port snap first (within ~14px canvas coords)
+                        var portSnap = nearestPort({ x: epX, y: epY }, snapShape, 14 / S.zoom);
+                        if (portSnap) {
+                            var rel = absToRel(snapShape, portSnap.port);
+                            cd[endKey] = snapShape.id;
+                            if (endKey === 'from') cd.fromRel = rel;
+                            else cd.toRel = rel;
+                            if (es && es.isAnchor) { deleteShape(es.id); }
+                            logAction('Attached '+connName(cd.id)+' '+endKey+' to '+shapeName(snapShape.id)+' ('+portSnap.port.name+')', 'move');
+                        } else {
+                            // Fall back to dynamic outline point
+                            var outlinePt = getShapeOutlinePoint(snapShape, epX, epY);
+                            var rel = absToRel(snapShape, outlinePt);
+                            cd[endKey] = snapShape.id;
+                            if (endKey === 'from') cd.fromRel = rel;
+                            else cd.toRel = rel;
+                            if (es && es.isAnchor) { deleteShape(es.id); }
+                            logAction('Attached '+connName(cd.id)+' '+endKey+' to '+shapeName(snapShape.id), 'move');
+                        }
                     }
                 }
             } else if (cd) {
@@ -1396,8 +1519,17 @@
                     if (!es2 || !es2.isAnchor) return;
                     var snp = findNearestShape({ x: es2.x + 5, y: es2.y + 5 }, snpPx2);
                     if (snp) {
-                        var oPt = getShapeOutlinePoint(snp, es2.x + 5, es2.y + 5);
-                        var oRel = absToRel(snp, oPt);
+                        var epX2 = es2.x + 5, epY2 = es2.y + 5;
+                        // Check for port snap first
+                        var portSnap2 = nearestPort({ x: epX2, y: epY2 }, snp, 14 / S.zoom);
+                        var oPt, oRel;
+                        if (portSnap2) {
+                            oPt = portSnap2.port;
+                            oRel = absToRel(snp, oPt);
+                        } else {
+                            oPt = getShapeOutlinePoint(snp, epX2, epY2);
+                            oRel = absToRel(snp, oPt);
+                        }
                         cd[end] = snp.id;
                         if (end === 'from') cd.fromRel = oRel;
                         else cd.toRel = oRel;
@@ -1771,6 +1903,20 @@
         opacityInput.value = propOpacity.value;
     });
     propOpacity.addEventListener('change', function() { scheduleSave(); });
+
+    if (propFillOpacity) {
+        propFillOpacity.addEventListener('input', function() {
+            applyStyleToSelected('fillOpacity', parseInt(propFillOpacity.value) / 100);
+        });
+        propFillOpacity.addEventListener('change', function() { scheduleSave(); render(); });
+    }
+    if (propStrokeOpacity) {
+        propStrokeOpacity.addEventListener('input', function() {
+            applyStyleToSelected('strokeOpacity', parseInt(propStrokeOpacity.value) / 100);
+        });
+        propStrokeOpacity.addEventListener('change', function() { scheduleSave(); render(); });
+    }
+
     propTextColor.addEventListener('input', function() {
         applyStyleToSelected('textColor', propTextColor.value);
         textColorInput.value = propTextColor.value;
@@ -2054,8 +2200,34 @@
         });
     });
 
+    // New Canvas
+    btnNew.addEventListener('click', function() {
+        if (S.shapes.length > 0 || S.connections.length > 0) {
+            if (!confirm('Start a new canvas? Any unsaved changes will be lost.')) return;
+        }
+        S.shapes = [];
+        S.connections = [];
+        S.selection = [];
+        S.nextId = 1;
+        S.nameCounters = {};
+        S.connNameCounter = 0;
+        S.projectName = '';
+        S.undoStack = [];
+        S.redoStack = [];
+        S.zoom = 1;
+        S.canvasW = 800;
+        S.canvasH = 600;
+        var r = container.getBoundingClientRect();
+        S.panX = r.width / 2 - 400;
+        S.panY = 50;
+        saveState();
+        render();
+        logAction('New canvas created', 'sys');
+    });
+
     // Save / Load project files
     btnSaveFile.addEventListener('click', function() {
+
         var data = {
             shapes: S.shapes, connections: S.connections, nextId: S.nextId,
             nameCounters: S.nameCounters, connNameCounter: S.connNameCounter,
@@ -2319,7 +2491,7 @@
         fillInput.value = '#ffffff'; strokeInput.value = '#333333';
         swInput.value = '2'; opacityInput.value = '100'; textColorInput.value = '#111113';
         propFill.value = '#ffffff'; propStroke.value = '#333333';
-        propSw.value = '2'; propOpacity.value = '100'; propTextColor.value = '#111113';
+        propSw.value = '2'; propOpacity.value = '100'; if (propFillOpacity) propFillOpacity.value = '100'; if (propStrokeOpacity) propStrokeOpacity.value = '100'; propTextColor.value = '#111113';
         propFontSize.value = CONFIG.defaultFontSize;
         connColor.value = '#94A3B8'; connWidth.value = '2'; connArrowStart.checked = false; connArrowEnd.checked = true;
 

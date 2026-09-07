@@ -384,7 +384,7 @@
             <div class="header-row">
                 <a href="index.html" class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4"/></svg> <span>diagram</span></a>
             </div>
-            <h1>diagram <span class="version" id="version-display">v1.1.1</span></h1>
+            <h1>diagram <span class="version" id="version-display">v1.1.2</span></h1>
             <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
         </header>
 
@@ -473,7 +473,19 @@
             <h2>Version History</h2>
             <div class="changelog">
                 <div class="changelog-entry">
-                    <span class="ver">1.1.1</span><span class="date">current</span>
+                    <span class="ver">1.1.2</span><span class="date">current</span>
+                    <ul>
+                        <li>Priority attachment ports — 8 snap points (corners + edge midpoints) with visual indicators when dragging connection endpoints</li>
+                        <li>Connection body click — click a connection line even when it overlaps a shape</li>
+                        <li>Fill opacity and stroke opacity — independent opacity controls per shape</li>
+                        <li>Touch long-press right-click — 500ms hold triggers context menu on touch</li>
+                        <li>New Canvas button — circle-plus icon with confirmation before clearing</li>
+                        <li>Rounded rect fill fix — fill rect now uses rx="8" to match stroke radius</li>
+                        <li>Z-height awareness — connection snapping respects shape layering</li>
+                    </ul>
+                </div>
+                <div class="changelog-entry">
+                    <span class="ver">1.1.1</span>
                     <ul>
                         <li>Fixed two-finger pan (midpoint delta added as direct translation)</li>
                         <li>Panel resize handle — drag left edge to resize (120–600px)</li>
@@ -483,7 +495,7 @@
                     </ul>
                 </div>
                 <div class="changelog-entry">
-                    <span class="ver">1.0.0</span><span class="date">Sep 6, 2025</span>
+                    <span class="ver">1.0.0</span><span class="date">Sep 6, 2026</span>
                     <ul>
                         <li>Pointer Events API — unified mouse, touch, and pen input</li>
                         <li>Pinch-to-zoom on touchscreens</li>
@@ -496,7 +508,7 @@
                     </ul>
                 </div>
                 <div class="changelog-entry">
-                    <span class="ver">0.3.0</span><span class="date">Sep 6, 2025</span>
+                    <span class="ver">0.3.0</span><span class="date">Sep 6, 2026</span>
                     <ul>
                         <li>Custom SVG shapes with viewBox control</li>
                         <li>Export to PNG, JPG, PDF (auto-crop and full canvas)</li>
@@ -510,7 +522,7 @@
                     </ul>
                 </div>
                 <div class="changelog-entry">
-                    <span class="ver">0.2.0</span><span class="date">Sep 3, 2025</span>
+                    <span class="ver">0.2.0</span><span class="date">Sep 3, 2026</span>
                     <ul>
                         <li>Shape tools: rectangle, rounded rect, circle, diamond, triangle, terminator</li>
                         <li>Line/arrow connections between shapes with outline snapping</li>
@@ -524,7 +536,7 @@
                     </ul>
                 </div>
                 <div class="changelog-entry">
-                    <span class="ver">0.1.0</span><span class="date">Sep 1, 2025</span>
+                    <span class="ver">0.1.0</span><span class="date">Sep 1, 2026</span>
                     <ul>
                         <li>Initial prototype — canvas, basic shapes, selection and dragging</li>
                     </ul>
@@ -566,7 +578,7 @@
         });
 
         // Version
-        var version = localStorage.getItem('diagram-version') || '1.1.1';
+        var version = localStorage.getItem('diagram-version') || '1.1.2';
         document.getElementById('version-display').textContent = 'v' + version;
     })();
     </script>
