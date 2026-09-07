@@ -924,10 +924,10 @@ html, body {
 /* ===== Export dropdown ===== */
 .export-wrap { position: relative; }
 .export-drop {
-    position: absolute; top: 100%; right: 0; margin-top: var(--space-1);
+    position: fixed; margin-top: var(--space-1);
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: var(--radius-md); padding: var(--space-1); display: none; flex-direction: column;
-    z-index: 200; min-width: 160px; box-shadow: var(--shadow-md);
+    z-index: 3000; min-width: 160px; box-shadow: var(--shadow-md);
 }
 .export-drop.visible { display: flex; }
 .export-item {

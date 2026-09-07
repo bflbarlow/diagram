@@ -2181,6 +2181,9 @@
     // Export dropdown
     btnExport.addEventListener('click', function(e) {
         e.stopPropagation();
+        var br = btnExport.getBoundingClientRect();
+        exportDrop.style.left = Math.max(4, br.left + br.width - 200) + 'px';
+        exportDrop.style.top = (br.bottom) + 'px';
         exportDrop.classList.toggle('visible');
     });
     document.addEventListener('click', function(e) {
@@ -2357,8 +2360,6 @@
 
     // ===== Init =====
     function init() {
-        // Store version for about page
-        localStorage.setItem('diagram-version', VERSION);
 
         // Migrate old localStorage keys (diagramflow-* → diagram-*)
         var oldTheme = localStorage.getItem('diagramflow-theme');
