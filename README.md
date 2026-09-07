@@ -129,7 +129,7 @@ diagram/
 
 ## Technical Details
 
-- **Version**: 1.1.0
+- **Version**: 1.1.1
 - **Framework**: Vanilla JavaScript (ES5-compatible), no dependencies
 - **Rendering**: DOM-based shapes with inline SVG; connections rendered as SVG paths
 - **Custom SVG**: Supports pasting SVG code with auto-detected viewBox or manual viewBox controls

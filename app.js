@@ -5,7 +5,7 @@
     'use strict';
 
     // ===== Version =====
-    var VERSION = '1.1.0';  // P3 compliance: icons, tokens, a11y, theme sync, localStorage cleanup
+    var VERSION = '1.1.1';  // v1.1.1: two-finger pan fix, panel resize handle, collapse visibility
 
     // ===== Configuration =====
     var CONFIG = {
@@ -57,6 +57,7 @@
     var propsPanel     = document.getElementById('properties-panel');
     var btnCollapse    = document.getElementById('btn-collapse-panel');
     var panelHeader    = document.getElementById('panel-header');
+    var panelTitle     = document.getElementById('panel-title');
     var contextMenu    = document.getElementById('context-menu');
     var textEditor     = document.getElementById('text-editor');
     var textInput      = document.getElementById('text-input');
@@ -118,6 +119,7 @@
     var propFontSize   = document.getElementById('prop-fontSize');
     var propTextPad    = document.getElementById('prop-textPad');
     var propNameInput  = document.getElementById('prop-name');
+    var propZHeight    = document.getElementById('prop-zHeight');
     var propTextAlign  = document.getElementById('prop-textAlign');
     var canvasWidth    = document.getElementById('canvas-width');
     var canvasHeight   = document.getElementById('canvas-height');
@@ -461,7 +463,9 @@
             textColor: textColorInput.value,
             textAlign: 'center',
             locked: false, fontSize: CONFIG.defaultFontSize,
-            textPad: 8
+            textPad: 8,
+            zHeight: 0,
+            hidden: false
         };
         if (type === 'custom') { s.customSvg = ''; }
         S.shapes.push(s);
@@ -519,24 +523,32 @@
     }
 
     function toFront(id) {
-        var i = S.shapes.findIndex(function(s) { return s.id === id; });
-        var s = S.shapes[i];
-        if (i >= 0) { S.shapes.push(S.shapes.splice(i, 1)[0]); logAction('Bring to front '+s.name, 'move'); }
+        var s = findShape(id);
+        if (!s) return;
+        var maxZ = 0;
+        S.shapes.forEach(function(sh) { if ((sh.zHeight || 0) > maxZ) maxZ = sh.zHeight || 0; });
+        s.zHeight = maxZ + 1;
+        logAction('Bring to front '+s.name, 'move');
     }
     function toBack(id) {
-        var i = S.shapes.findIndex(function(s) { return s.id === id; });
-        var s = S.shapes[i];
-        if (i >= 0) { S.shapes.unshift(S.shapes.splice(i, 1)[0]); logAction('Send to back '+s.name, 'move'); }
+        var s = findShape(id);
+        if (!s) return;
+        var minZ = 0;
+        S.shapes.forEach(function(sh) { if ((sh.zHeight || 0) < minZ) minZ = sh.zHeight || 0; });
+        s.zHeight = minZ - 1;
+        logAction('Send to back '+s.name, 'move');
     }
     function forward(id) {
-        var i = S.shapes.findIndex(function(s) { return s.id === id; });
-        var s = S.shapes[i];
-        if (i >= 0 && i < S.shapes.length - 1) { S.shapes.splice(i+1, 0, S.shapes.splice(i, 1)[0]); logAction('Bring forward '+s.name, 'move'); }
+        var s = findShape(id);
+        if (!s) return;
+        s.zHeight = (s.zHeight || 0) + 1;
+        logAction('Bring forward '+s.name, 'move');
     }
     function backward(id) {
-        var i = S.shapes.findIndex(function(s) { return s.id === id; });
-        var s = S.shapes[i];
-        if (i > 0) { S.shapes.splice(i-1, 0, S.shapes.splice(i, 1)[0]); logAction('Send backward '+s.name, 'move'); }
+        var s = findShape(id);
+        if (!s) return;
+        s.zHeight = (s.zHeight || 0) - 1;
+        logAction('Send backward '+s.name, 'move');
     }
 
     // ===== SVG generators =====
@@ -647,17 +659,54 @@
     }
 
     // ===== Render =====
-    function render() { renderShapes(); renderConns(); renderProps(); }
-
-    // z-index helper: shapes get even indices (2,4,6,...), connections sit between
-    function shapeZ(idx) { return idx * 2 + 2; }
-    function connZ(conn) {
-        var a = findShape(conn.from), b = findShape(conn.to);
-        var ai = a ? S.shapes.indexOf(a) : -1;
-        var bi = b ? S.shapes.indexOf(b) : -1;
-        var maxI = Math.max(ai, bi);
-        return maxI >= 0 ? shapeZ(maxI) - 1 : 1;
+    // ===== Layouts =====
+    function renderLayouts() {
+        var container = document.getElementById('panel-layers');
+        if (!container) return;
+        // Sort shapes by zHeight ascending, then by array index for stability
+        var sorted = S.shapes.slice().sort(function(a, b) {
+            var dz = (a.zHeight || 0) - (b.zHeight || 0);
+            if (dz !== 0) return dz;
+            return S.shapes.indexOf(a) - S.shapes.indexOf(b);
+        });
+        var html = '';
+        // Get shape type icon SVG
+        function shapeIcon(type) {
+            var icons = {
+                rect: '<rect x="3" y="3" width="18" height="18" rx="2"/>',
+                roundRect: '<rect x="3" y="3" width="18" height="18" rx="4"/>',
+                circle: '<circle cx="12" cy="12" r="9"/>',
+                diamond: '<path d="M12 3l9 9-9 9-9-9z"/>',
+                triangle: '<path d="M12 3l9 15H3z"/>',
+                terminator: '<rect x="3" y="3" width="18" height="18" rx="9"/>',
+                line: '<line x1="3" y1="21" x2="21" y2="3"/>',
+                text: '<path d="M3 7h18M12 4v16M5 20h14"/>'
+            };
+            return icons[type] || icons.rect;
+        }
+        var html = '<div class="layer-list">';
+        sorted.forEach(function(s) {
+            var name = s.name || s.id;
+            var zh = s.zHeight || 0;
+            var isHidden = s.hidden || false;
+            var isSelected = S.selectedIds && S.selectedIds.indexOf(s.id) !== -1;
+            var iconSvg = shapeIcon(s.type);
+            html += '<div class="layer-item'+(isSelected ? ' active' : '')+'" data-id="'+s.id+'">';
+            html += '<span class="layer-icon"><svg viewBox="0 0 24 24">'+iconSvg+'</svg></span>';
+            html += '<span class="layer-name">'+escHtml(name)+'</span>';
+            html += '<button class="layer-vis-toggle'+(isHidden ? ' hidden' : '')+'" title="'+(isHidden ? 'Show' : 'Hide')+'" data-id="'+s.id+'">';
+            html += isHidden ? '<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19M14.12 14.12a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+            html += '</button>';
+            html += '<input type="number" class="layer-z" value="'+zh+'" min="-999" max="999" data-id="'+s.id+'" title="Z-height">';
+            html += '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
     }
+
+    function render() { renderShapes(); renderConns(); renderProps(); renderLayouts(); }
+
+
 
     function renderGrid() {
         var g = S.gridSize;
@@ -680,9 +729,25 @@
             '</svg>';
     }
 
+    // z-index helper: shapes get z-index based on zHeight sort position
+    function shapeZ(idx) { return idx * 2 + 2; }
+    function connZ(conn) {
+        var a = findShape(conn.from), b = findShape(conn.to);
+        var ai = a ? S.shapes.indexOf(a) : -1;
+        var bi = b ? S.shapes.indexOf(b) : -1;
+        var maxI = Math.max(ai, bi);
+        return maxI >= 0 ? shapeZ(maxI) - 1 : 1;
+    }
+
     function renderShapes() {
         shapesLayer.innerHTML = '';
-        S.shapes.forEach(function(s, idx) {
+        // Sort by zHeight ascending, then array index for stability
+        var sortedShapes = S.shapes.slice().filter(function(s) { return !s.hidden; }).sort(function(a, b) {
+            var dz = (a.zHeight || 0) - (b.zHeight || 0);
+            if (dz !== 0) return dz;
+            return S.shapes.indexOf(a) - S.shapes.indexOf(b);
+        });
+        sortedShapes.forEach(function(s, idx) {
             var el = document.createElement('div');
             el.className = 'diagram-shape' + (S.selection.includes(s.id) ? ' selected' : '') + (s.locked ? ' locked' : '');
             el.dataset.id = s.id;
@@ -798,7 +863,7 @@
             var c = findConn(cIds[0]);
             if (!c) { propsPanel.classList.add('hidden'); return; }
             propsPanel.classList.remove('hidden');
-            panelHeader.textContent = 'Connection';
+            panelTitle.textContent = 'Connection';
             projEl.classList.add('hidden');
             customEl.classList.add('hidden');
             shapeEls.forEach(function(el) { el.classList.add('hidden'); });
@@ -809,7 +874,7 @@
             var s = findShape(sIds[0]);
             if (!s) { propsPanel.classList.add('hidden'); return; }
             propsPanel.classList.remove('hidden');
-            panelHeader.textContent = s.type === 'custom' ? 'Custom Shape' : 'Shape';
+            panelTitle.textContent = s.type === 'custom' ? 'Custom Shape' : 'Shape';
             projEl.classList.add('hidden');
             shapeEls.forEach(function(el) { el.classList.remove('hidden'); });
             connEls.forEach(function(el) { el.classList.add('hidden'); });
@@ -832,12 +897,13 @@
             propText.value = s.text;
             propTextAlign.value = s.textAlign || 'center';
             propNameInput.value = s.name || '';
+            propZHeight.value = s.zHeight || 0;
             propTextPad.value = s.textPad || 0;
             syncStyleControlsToShape(s);
         } else {
             // Show project properties
             propsPanel.classList.remove('hidden');
-            panelHeader.textContent = 'Project';
+            panelTitle.textContent = 'Project';
             projEl.classList.remove('hidden');
             customEl.classList.add('hidden');
             shapeEls.forEach(function(el) { el.classList.add('hidden'); });
@@ -1117,7 +1183,7 @@
         // Update pointer tracking for pinch
         S.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
 
-        // Handle pinch-to-zoom
+        // Handle pinch-to-zoom + two-finger pan
         if (S.pinchStart && Object.keys(S.pointers).length >= 2) {
             var ptrs = Object.values(S.pointers);
             var dxP = ptrs[1].x - ptrs[0].x;
@@ -1125,14 +1191,21 @@
             var newDist = Math.sqrt(dxP * dxP + dyP * dyP);
             var scale = newDist / S.pinchStart.dist;
             var r = container.getBoundingClientRect();
+            // Current midpoint in container coords
             var cx = (ptrs[0].x + ptrs[1].x) / 2 - r.left;
             var cy = (ptrs[0].y + ptrs[1].y) / 2 - r.top;
+            // Initial midpoint in container coords
+            var icx = S.pinchStart.cx - r.left;
+            var icy = S.pinchStart.cy - r.top;
             var newZoom = clamp(S.pinchStart.zoom * scale, CONFIG.minZoom, CONFIG.maxZoom);
+            var zFrac = newZoom / S.pinchStart.zoom;
+            // 1) Zoom about the initial midpoint
+            S.panX = icx - (icx - S.pinchStart.panX) * zFrac;
+            S.panY = icy - (icy - S.pinchStart.panY) * zFrac;
             S.zoom = newZoom;
-            S.panX = cx - (cx - S.pinchStart.panX) * (newZoom / S.pinchStart.zoom);
-            S.panY = cy - (cy - S.pinchStart.panY) * (newZoom / S.pinchStart.zoom);
-            // Also pan with finger movement
-            S.panX += (cx - (S.pinchStart.cx - r.left)) * (1 - newZoom / S.pinchStart.zoom);
+            // 2) Pan to track midpoint movement (direct translation in container space)
+            S.panX += cx - icx;
+            S.panY += cy - icy;
             applyTransform();
             return;
         }
@@ -1609,9 +1682,17 @@
         if (collapsed) {
             btnCollapse.title = 'Expand panel (Ctrl+\\)';
             if (svg) svg.style.transform = 'scaleX(-1)';
+            // Clear any saved inline width so CSS width:40px takes effect
+            propsPanel.style.width = '';
         } else {
             btnCollapse.title = 'Collapse panel (Ctrl+\\)';
             if (svg) svg.style.transform = '';
+            // Restore saved width on expand
+            var savedW = localStorage.getItem('diagram-panel-width');
+            if (savedW) {
+                var w = parseInt(savedW, 10);
+                if (w >= 120 && w <= 600) propsPanel.style.width = w + 'px';
+            }
         }
         localStorage.setItem('diagram-panel-collapsed', collapsed ? '1' : '0');
     }
@@ -1625,6 +1706,30 @@
             togglePanel();
         }
     });
+
+    // ===== Panel Resize Handle =====
+    var panelResizeHandle = document.getElementById('panel-resize-handle');
+    if (panelResizeHandle) {
+        panelResizeHandle.addEventListener('pointerdown', function(e) {
+            e.preventDefault();
+            panelResizeHandle.setPointerCapture(e.pointerId);
+            panelResizeHandle.classList.add('active');
+            panelResizeHandle._startW = propsPanel.offsetWidth;
+            panelResizeHandle._startX = e.clientX;
+        });
+        document.addEventListener('pointermove', function(e) {
+            if (!panelResizeHandle.classList.contains('active')) return;
+            var dx = panelResizeHandle._startX - e.clientX;
+            var newW = Math.max(120, Math.min(600, panelResizeHandle._startW + dx));
+            propsPanel.style.width = newW + 'px';
+        });
+        document.addEventListener('pointerup', function(e) {
+            if (!panelResizeHandle.classList.contains('active')) return;
+            panelResizeHandle.classList.remove('active');
+            // Save width to localStorage
+            try { localStorage.setItem('diagram-panel-width', String(propsPanel.offsetWidth)); } catch (e) {}
+        });
+    }
 
     document.getElementById('log-toggle').addEventListener('click', function() {
         var panel = document.querySelector('.panel-log');
@@ -1766,6 +1871,65 @@
         });
         scheduleSave();
         render();
+    });
+
+    // Z-height
+    propZHeight.addEventListener('change', function() {
+        var v = parseInt(propZHeight.value) || 0;
+        shapeSel().forEach(function(sid) {
+            var s = findShape(sid);
+            if (s) s.zHeight = v;
+        });
+        logAction('Z-height → '+v, 'edit');
+        scheduleSave();
+        render();
+    });
+
+    // ===== Layouts panel (delegated events) =====
+    document.addEventListener('click', function(e) {
+        var toggle = e.target.closest('.layer-vis-toggle');
+        if (toggle) {
+            var id = toggle.dataset.id;
+            var s = findShape(id);
+            if (s) {
+                s.hidden = !s.hidden;
+                logAction((s.hidden ? 'Hid' : 'Showed')+' '+s.name, 'edit');
+                scheduleSave();
+                render();
+            }
+        }
+    });
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('layer-z')) {
+            var id = e.target.dataset.id;
+            var v = parseInt(e.target.value) || 0;
+            var s = findShape(id);
+            if (s) {
+                s.zHeight = v;
+                // Also reflect in properties panel if this shape is selected
+                if (propZHeight) propZHeight.value = v;
+                logAction('Z-height → '+v+' ('+s.name+')', 'edit');
+                scheduleSave();
+                render();
+            }
+        }
+    });
+
+    // ===== Tab switching (Properties / Layers) =====
+    document.addEventListener('click', function(e) {
+        var tab = e.target.closest('.panel-tab');
+        if (!tab) return;
+        var target = tab.dataset.tab;
+        // Update active tab
+        document.querySelectorAll('.panel-tab').forEach(function(t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        // Show/hide content
+        var scroll = document.querySelector('.panel-scroll');
+        var layers = document.getElementById('panel-layers');
+        if (scroll) scroll.style.display = target === 'properties' ? '' : 'none';
+        if (layers) layers.style.display = target === 'layers' ? '' : 'none';
+        // Render layers content if opening tab
+        if (target === 'layers') renderLayouts();
     });
 
     // ===== Props panel geometry/text =====
@@ -2073,6 +2237,14 @@
             btnCollapse.title = 'Expand panel (Ctrl+\\)';
             var collapseSvg = btnCollapse.querySelector('svg');
             if (collapseSvg) collapseSvg.style.transform = 'scaleX(-1)';
+        }
+        // Restore panel width (skip if collapsed so CSS width:40px wins)
+        if (!propsPanel.classList.contains('collapsed')) {
+            var savedW = localStorage.getItem('diagram-panel-width');
+            if (savedW) {
+                var w = parseInt(savedW, 10);
+                if (w >= 120 && w <= 600) propsPanel.style.width = w + 'px';
+            }
         }
 
         var saved = localStorage.getItem('diagram-state');

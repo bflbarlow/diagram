@@ -11,6 +11,7 @@
         document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563EB' stroke-width='2'%3E%3Crect x='3' y='3' width='7' height='7' rx='1'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1'/%3E%3Cpath d='M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4'/%3E%3C/svg%3E">
     <style>
         /* ===== Theme Variables ===== */
         :root,
@@ -383,7 +384,7 @@
             <div class="header-row">
                 <a href="index.html" class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4"/></svg> <span>diagram</span></a>
             </div>
-            <h1>diagram <span class="version" id="version-display">v1.1.0</span></h1>
+            <h1>diagram <span class="version" id="version-display">v1.1.1</span></h1>
             <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
         </header>
 
@@ -472,15 +473,13 @@
             <h2>Version History</h2>
             <div class="changelog">
                 <div class="changelog-entry">
-                    <span class="ver">1.1.0</span><span class="date">current</span>
+                    <span class="ver">1.1.1</span><span class="date">current</span>
                     <ul>
-                        <li>Ecosystem spacing/radius/shadow tokens (F2/F3/F4)</li>
-                        <li>Normalized all tool icons to 24×24 viewBox (F1)</li>
-                        <li>aria-live on action log (F5)</li>
-                        <li>Canvas aria-label and role (F6)</li>
-                        <li>Cross-tab theme sync via storage event (F8)</li>
-                        <li>localStorage key migration: diagramflow-* → diagram-* (F10)</li>
-                        <li>Updated documentation to v1.1 (STYLE_GUIDE, reconciliation, README, REVIEW)</li>
+                        <li>Fixed two-finger pan (midpoint delta added as direct translation)</li>
+                        <li>Panel resize handle — drag left edge to resize (120–600px)</li>
+                        <li>Collapse button now visible with accent styling</li>
+                        <li>Panel width saved/restored in localStorage</li>
+                        <li>Properties panel polished to match Layout app: section headers, prop-row layout, layer icons/hover/active states, 44px touch targets</li>
                     </ul>
                 </div>
                 <div class="changelog-entry">
@@ -567,7 +566,7 @@
         });
 
         // Version
-        var version = localStorage.getItem('diagram-version') || '1.1.0';
+        var version = localStorage.getItem('diagram-version') || '1.1.1';
         document.getElementById('version-display').textContent = 'v' + version;
     })();
     </script>
