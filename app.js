@@ -14,6 +14,7 @@
         handleGrabPx: 14,       // px tolerance around resize handles
         minShapeSize: 20,       // minimum width/height for any shape
         dupOffset: 30,          // pixel offset when duplicating
+        pasteOffset: 50,         // pixel offset when pasting
         arrowSize: 10,          // arrowhead length
         arrowSpread: 0.35,      // arrowhead spread angle (radians)
         snapPx: 16,             // px threshold for snapping line endpoints to shapes (at 100% zoom)
@@ -43,9 +44,16 @@
         nameCounters: {},            // per-type counter for shapes (string keys)
         connNameCounter: 0,          // counter for connection names
         actionLog: [],               // [{msg, cat, ts}]
+        clipboard: null,               // copied shapes/connections for copy/paste
         gridSize: 20, showGrid: true, snapToGrid: true,
         canvasW: 3000, canvasH: 2000, // bounded canvas dimensions
-        projectName: 'Untitled'      // project name shown in panel
+        projectName: 'Untitled',     // project name shown in panel
+        metadata: {                  // document metadata
+            version: VERSION,
+            createdAt: null,
+            updatedAt: null,
+            savedAt: null
+        }
     };
 
     // ===== DOM refs (cached once, never looked up again) =====
@@ -320,14 +328,24 @@
     function connName(id)  { var c = findConn(id);  return c ? (c.name || ('Line ' + id)) : id; }
 
     // ===== Undo/Redo =====
+    function updateMetadata() {
+        var now = new Date().toISOString();
+        if (!S.metadata.createdAt) S.metadata.createdAt = now;
+        S.metadata.updatedAt = now;
+        S.metadata.savedAt = now;
+        S.metadata.version = VERSION;
+    }
+
     function saveState() {
         try {
+            updateMetadata();
             localStorage.setItem('diagram-state', JSON.stringify({
                 shapes: S.shapes, connections: S.connections, nextId: S.nextId,
                 nameCounters: S.nameCounters, connNameCounter: S.connNameCounter,
                 zoom: S.zoom, panX: S.panX, panY: S.panY,
                 canvasW: S.canvasW, canvasH: S.canvasH,
-                projectName: S.projectName
+                projectName: S.projectName,
+                metadata: S.metadata
             }));
         } catch(e) {
             console.error('saveState failed:', e);
@@ -557,6 +575,61 @@
         copy.name = t.charAt(0).toUpperCase() + t.slice(1) + ' ' + S.nameCounters[t];
         S.shapes.push(copy);
         logAction('Duplicated '+o.name+' → '+copy.name, 'add');
+    }
+
+    function copySelection() {
+        var sIds = shapeSel();
+        if (sIds.length === 0 && connSel().length === 0) return;
+        // Deep-clone selected shapes
+        var copiedShapes = sIds.map(function(id) {
+            var s = findShape(id);
+            return s ? JSON.parse(JSON.stringify(s)) : null;
+        }).filter(Boolean);
+        // Deep-clone connections that connect two selected shapes
+        var copiedConnIds = {};
+        sIds.forEach(function(id) { copiedConnIds[id] = true; });
+        var copiedConns = S.connections.filter(function(c) {
+            return copiedConnIds[c.from] && copiedConnIds[c.to];
+        }).map(function(c) {
+            return JSON.parse(JSON.stringify(c));
+        });
+        S.clipboard = { shapes: copiedShapes, connections: copiedConns };
+        logAction('Copied ' + sIds.length + ' shape(s), ' + copiedConns.length + ' connection(s)', 'sys');
+    }
+
+    function pasteClipboard() {
+        if (!S.clipboard || S.clipboard.shapes.length === 0) return;
+        var idMap = {}; // oldId → newId
+        var newShapes = [];
+        S.clipboard.shapes.forEach(function(oldS) {
+            var copy = JSON.parse(JSON.stringify(oldS));
+            var newId = genId();
+            idMap[copy.id] = newId;
+            copy.id = newId;
+            copy.x += CONFIG.pasteOffset;
+            copy.y += CONFIG.pasteOffset;
+            clampShape(copy);
+            // Increment counter and rename the copy
+            var t = copy.type;
+            if (!S.nameCounters[t]) S.nameCounters[t] = 0;
+            S.nameCounters[t]++;
+            copy.name = t.charAt(0).toUpperCase() + t.slice(1) + ' ' + S.nameCounters[t];
+            S.shapes.push(copy);
+            newShapes.push(copy);
+        });
+        // Paste connections, remapping IDs
+        S.clipboard.connections.forEach(function(oldC) {
+            var cCopy = JSON.parse(JSON.stringify(oldC));
+            cCopy.id = cid();
+            cCopy.from = idMap[cCopy.from];
+            cCopy.to = idMap[cCopy.to];
+            if (cCopy.from && cCopy.to) {
+                S.connections.push(cCopy);
+            }
+        });
+        // Select the newly pasted shapes
+        S.selection = newShapes.map(function(s) { return s.id; });
+        logAction('Pasted ' + newShapes.length + ' shape(s)', 'add');
     }
 
     function toFront(id) {
@@ -2220,6 +2293,7 @@
         S.zoom = 1;
         S.canvasW = 800;
         S.canvasH = 600;
+        S.metadata = { version: VERSION, createdAt: null, updatedAt: null, savedAt: null };
         var r = container.getBoundingClientRect();
         S.panX = r.width / 2 - 400;
         S.panY = 50;
@@ -2236,7 +2310,8 @@
             nameCounters: S.nameCounters, connNameCounter: S.connNameCounter,
             zoom: S.zoom, panX: S.panX, panY: S.panY,
             canvasW: S.canvasW, canvasH: S.canvasH,
-            projectName: S.projectName
+            projectName: S.projectName,
+            metadata: (function() { updateMetadata(); return S.metadata; })()
         };
         var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         var a = document.createElement('a');
@@ -2268,10 +2343,22 @@
                     if (typeof d.zoom === 'number') S.zoom = d.zoom;
                     if (typeof d.panX === 'number') S.panX = d.panX;
                     if (typeof d.panY === 'number') S.panY = d.panY;
+                    // Restore metadata if present, else reset
+                    if (d.metadata) {
+                        S.metadata = {
+                            version: d.metadata.version || VERSION,
+                            createdAt: d.metadata.createdAt || null,
+                            updatedAt: d.metadata.updatedAt || null,
+                            savedAt: d.metadata.savedAt || null
+                        };
+                    } else {
+                        S.metadata = { version: VERSION, createdAt: null, updatedAt: null, savedAt: null };
+                    }
                     S.selection = [];
                     S.undoStack = []; S.redoStack = [];
                     saveState(); renderGrid(); render(); applyTransform();
-                    logAction('Loaded project: ' + S.projectName, 'sys');
+                    var metaInfo = S.metadata.version ? ' (v' + S.metadata.version + ')' : '';
+                    logAction('Loaded project' + metaInfo + ': ' + S.projectName, 'sys');
                 } catch(err) {
                     console.error('Load failed:', err);
                     logAction('Load failed: invalid file', 'sys');
@@ -2289,6 +2376,8 @@
             var sIds = shapeSel(), cIds = connSel();
             if (sIds.length > 0) {
                 switch (act) {
+                    case 'copy':         copySelection(); break;
+                    case 'paste':         pasteClipboard(); break;
                     case 'duplicate':    sIds.forEach(function(id) { dup(id); }); break;
                     case 'delete':       sIds.forEach(function(id) { deleteShape(id); }); break;
                     case 'bring-front':   sIds.forEach(function(id) { toFront(id); }); break;
@@ -2347,6 +2436,8 @@
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
         if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); copySelection(); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'v') { e.preventDefault(); pasteClipboard(); pushUndo(); render(); }
         if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); shapeSel().forEach(function(id) { dup(id); }); pushUndo(); render(); }
         if ((e.ctrlKey || e.metaKey) && e.key === ']') { e.preventDefault(); shapeSel().forEach(function(id) { forward(id); }); pushUndo(); render(); }
         if ((e.ctrlKey || e.metaKey) && e.key === '[') { e.preventDefault(); shapeSel().forEach(function(id) { backward(id); }); pushUndo(); render(); }
@@ -2434,6 +2525,17 @@
                 if (typeof d.canvasW === 'number') S.canvasW = d.canvasW;
                 if (typeof d.canvasH === 'number') S.canvasH = d.canvasH;
                 if (typeof d.projectName === 'string') S.projectName = d.projectName;
+                // Restore metadata if present, else reset for localStorage
+                if (d.metadata) {
+                    S.metadata = {
+                        version: d.metadata.version || VERSION,
+                        createdAt: d.metadata.createdAt || null,
+                        updatedAt: d.metadata.updatedAt || null,
+                        savedAt: d.metadata.savedAt || null
+                    };
+                } else {
+                    S.metadata = { version: VERSION, createdAt: null, updatedAt: null, savedAt: null };
+                }
 
                 S.shapes.forEach(function(s) {
                     if (!s || typeof s !== 'object') return;
