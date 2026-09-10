@@ -48,6 +48,10 @@
         gridSize: 20, showGrid: true, snapToGrid: true,
         canvasW: 3000, canvasH: 2000, // bounded canvas dimensions
         projectName: 'Untitled',     // project name shown in panel
+        readOnly: false,             // true when another tab is the editor
+        autoSaveFileHandle: null,    // FileSystemFileHandle for native auto-save
+        channel: null,               // BroadcastChannel for multi-tab coordination
+        tabId: '',                   // unique tab identifier
         metadata: {                  // document metadata
             version: VERSION,
             createdAt: null,
@@ -354,9 +358,307 @@
 
     var _saveTimer = 0;
     function scheduleSave() {
+        if (S.readOnly) return;  // read-only: don't persist
         saveState();
         clearTimeout(_saveTimer);
         _saveTimer = setTimeout(saveState, 300);
+    }
+
+    // ===== BroadcastChannel: Multi-Tab Coordination =====
+    function setupBroadcastChannel() {
+        S.tabId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+        try {
+            S.channel = new BroadcastChannel('diagram-sync');
+        } catch(e) {
+            // BroadcastChannel not supported (e.g. older browser) – skip
+            return;
+        }
+
+        var claimTimeout = null;
+
+        S.channel.onmessage = function(ev) {
+            var msg = ev.data;
+            if (!msg || !msg.type) return;
+
+            switch (msg.type) {
+                case 'claim':
+                    // Another tab wants to be editor
+                    if (msg.tabId === S.tabId) break;
+                    if (!S.readOnly) {
+                        // We're the editor — deny them
+                        S.channel.postMessage({ type: 'deny', ownerTabId: S.tabId, tabId: msg.tabId });
+                    } else if (claimTimeout) {
+                        // We're also trying to become editor — deterministic tiebreaker
+                        // Lower tabId wins (lexicographic comparison)
+                        if (msg.tabId < S.tabId) {
+                            // They win — cancel our claim, stay read-only
+                            clearTimeout(claimTimeout);
+                            claimTimeout = null;
+                        }
+                    }
+                    break;
+
+                case 'deny':
+                    // Our claim was denied — switch to read-only
+                    if (msg.tabId === S.tabId) {
+                        clearTimeout(claimTimeout);
+                        claimTimeout = null;
+                        setReadOnly(true, msg.ownerTabId || 'another tab');
+                    }
+                    break;
+
+                case 'release':
+                    // Editor tab closed — if we're read-only, try to become editor
+                    if (S.readOnly && msg.tabId !== S.tabId) {
+                        tryBecomeEditor();
+                    }
+                    break;
+
+                case 'state-changed':
+                    // Editor tab signals that state changed — reload from localStorage
+                    if (S.readOnly && msg.tabId !== S.tabId) {
+                        loadFromLocalStorage();
+                    }
+                    break;
+            }
+        };
+
+        // Claim editor role on startup
+        function tryBecomeEditor() {
+            // Broadcast claim and wait 250ms for denials
+            S.channel.postMessage({ type: 'claim', tabId: S.tabId });
+            clearTimeout(claimTimeout);
+            claimTimeout = setTimeout(function() {
+                // No denial received — we're the editor
+                setReadOnly(false);
+                logAction('This tab is now the editor', 'sys');
+            }, 250);
+        }
+
+        tryBecomeEditor();
+    }
+
+    function setReadOnly(readOnly, ownerHint) {
+        var wasReadOnly = S.readOnly;
+        S.readOnly = readOnly;
+
+        if (readOnly) {
+            document.body.classList.add('read-only-mode');
+            var banner = document.getElementById('readonly-banner');
+            if (banner) {
+                banner.textContent = 'Read-only — ' + (ownerHint || 'another tab') + ' is editing';
+                banner.style.display = '';
+            }
+            if (!wasReadOnly) {
+                logAction('Switched to read-only (another tab is editor)', 'sys');
+            }
+        } else {
+            document.body.classList.remove('read-only-mode');
+            var banner2 = document.getElementById('readonly-banner');
+            if (banner2) banner2.style.display = 'none';
+        }
+    }
+
+    function loadFromLocalStorage() {
+        var saved = localStorage.getItem('diagram-state');
+        if (!saved) return;
+        try {
+            var d = JSON.parse(saved);
+            S.shapes = d.shapes || [];
+            S.connections = d.connections || [];
+            S.nameCounters = d.nameCounters || {};
+            S.connNameCounter = d.connNameCounter || 0;
+            S.nextId = (d.nextId || 0) + 1;
+            if (typeof d.zoom === 'number' && d.zoom >= CONFIG.minZoom && d.zoom <= CONFIG.maxZoom) S.zoom = d.zoom;
+            if (typeof d.panX === 'number') S.panX = d.panX;
+            if (typeof d.panY === 'number') S.panY = d.panY;
+            if (typeof d.canvasW === 'number') S.canvasW = d.canvasW;
+            if (typeof d.canvasH === 'number') S.canvasH = d.canvasH;
+            if (typeof d.projectName === 'string') S.projectName = d.projectName;
+            if (d.metadata) {
+                S.metadata = {
+                    version: d.metadata.version || VERSION,
+                    createdAt: d.metadata.createdAt || null,
+                    updatedAt: d.metadata.updatedAt || null,
+                    savedAt: d.metadata.savedAt || null
+                };
+            }
+            S.selection = [];
+            renderGrid(); render(); applyTransform();
+            // Update toolbar inputs
+            canvasWidth.value = S.canvasW; canvasHeight.value = S.canvasH;
+            if (projectNameInput) projectNameInput.value = S.projectName || '';
+            if (zoomDisplay) zoomDisplay.textContent = Math.round(S.zoom * 100) + '%';
+        } catch(e) {
+            console.error('Failed to load from localStorage:', e);
+        }
+    }
+
+    // Listen for localStorage changes from other tabs (storage events)
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'diagram-state' && S.readOnly && e.newValue) {
+            loadFromLocalStorage();
+        }
+    });
+
+    // Notify other tabs that state changed (call after saveState)
+    function broadcastStateChange() {
+        if (S.channel && !S.readOnly) {
+            try {
+                S.channel.postMessage({ type: 'state-changed', tabId: S.tabId });
+            } catch(e) { /* ignore */ }
+        }
+    }
+
+    // Release editor role on unload
+    function releaseChannel() {
+        if (S.channel && !S.readOnly) {
+            try {
+                S.channel.postMessage({ type: 'release', tabId: S.tabId });
+                S.channel.close();
+            } catch(e) { /* ignore */ }
+        }
+    }
+
+    // ===== File System Access API: Native Auto-Save =====
+    var AUTO_SAVE_DB = 'diagram-fs-handles';
+    var AUTO_SAVE_STORE = 'handles';
+    var AUTO_SAVE_KEY = 'current-handle';
+
+    function fsApiSupported() {
+        return typeof window.showSaveFilePicker === 'function';
+    }
+
+    function openAutoSaveDB() {
+        return new Promise(function(resolve, reject) {
+            var req = indexedDB.open(AUTO_SAVE_DB, 1);
+            req.onupgradeneeded = function() {
+                req.result.createObjectStore(AUTO_SAVE_STORE);
+            };
+            req.onsuccess = function() { resolve(req.result); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    function storeFileHandle(handle) {
+        return openAutoSaveDB().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction(AUTO_SAVE_STORE, 'readwrite');
+                tx.objectStore(AUTO_SAVE_STORE).put(handle, AUTO_SAVE_KEY);
+                tx.oncomplete = function() { db.close(); resolve(); };
+                tx.onerror = function() { db.close(); reject(tx.error); };
+            });
+        });
+    }
+
+    function loadFileHandle() {
+        return openAutoSaveDB().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction(AUTO_SAVE_STORE, 'readonly');
+                var req = tx.objectStore(AUTO_SAVE_STORE).get(AUTO_SAVE_KEY);
+                req.onsuccess = function() { db.close(); resolve(req.result || null); };
+                req.onerror = function() { db.close(); reject(req.error); };
+            });
+        }).catch(function() { return null; });
+    }
+
+    function clearFileHandle() {
+        return openAutoSaveDB().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction(AUTO_SAVE_STORE, 'readwrite');
+                tx.objectStore(AUTO_SAVE_STORE).delete(AUTO_SAVE_KEY);
+                tx.oncomplete = function() { db.close(); resolve(); };
+                tx.onerror = function() { db.close(); reject(tx.error); };
+            });
+        }).catch(function() {});
+    }
+
+    function writeToAutoSaveFile() {
+        if (!S.autoSaveFileHandle) return Promise.resolve();
+        // Check permission
+        return S.autoSaveFileHandle.queryPermission({ mode: 'readwrite' }).then(function(state) {
+            if (state !== 'granted') {
+                return S.autoSaveFileHandle.requestPermission({ mode: 'readwrite' });
+            }
+            return state;
+        }).then(function(state) {
+            if (state !== 'granted') {
+                S.autoSaveFileHandle = null;
+                updateAutoSaveUI();
+                logAction('Auto-save disabled: permission denied', 'sys');
+                return;
+            }
+            var data = {
+                shapes: S.shapes, connections: S.connections, nextId: S.nextId,
+                nameCounters: S.nameCounters, connNameCounter: S.connNameCounter,
+                zoom: S.zoom, panX: S.panX, panY: S.panY,
+                canvasW: S.canvasW, canvasH: S.canvasH,
+                projectName: S.projectName,
+                metadata: S.metadata
+            };
+            return S.autoSaveFileHandle.createWritable().then(function(writable) {
+                return writable.write(JSON.stringify(data, null, 2)).then(function() {
+                    return writable.close();
+                });
+            });
+        }).catch(function(err) {
+            console.error('Auto-save write failed:', err);
+            S.autoSaveFileHandle = null;
+            updateAutoSaveUI();
+            logAction('Auto-save failed: ' + err.message, 'sys');
+        });
+    }
+
+    function updateAutoSaveUI() {
+        var dot = document.getElementById('save-dot');
+        var btn = document.getElementById('btn-save-file');
+        if (!dot || !btn) return;
+        if (S.autoSaveFileHandle) {
+            dot.style.display = '';
+            btn.title = 'Auto-saving to file. Click to download a backup.';
+        } else {
+            dot.style.display = 'none';
+            btn.title = fsApiSupported() ? 'Save — opens auto-save (Chrome/Edge)' : 'Save Project (.json)';
+        }
+    }
+
+    // Patch saveState to also write to auto-save file
+    var _originalSaveState = saveState;
+    saveState = function() {
+        _originalSaveState();
+        if (S.autoSaveFileHandle && !S.readOnly) {
+            writeToAutoSaveFile();
+        }
+        broadcastStateChange();
+    };
+
+    function restoreAutoSaveHandle() {
+        if (!fsApiSupported()) return;
+        loadFileHandle().then(function(handle) {
+            if (!handle) return;
+            // Verify permission still holds
+            return handle.queryPermission({ mode: 'readwrite' }).then(function(state) {
+                if (state === 'granted') {
+                    S.autoSaveFileHandle = handle;
+                    updateAutoSaveUI();
+                    logAction('Auto-save resumed: ' + handle.name, 'sys');
+                } else {
+                    // Try to re-request
+                    return handle.requestPermission({ mode: 'readwrite' }).then(function(state2) {
+                        if (state2 === 'granted') {
+                            S.autoSaveFileHandle = handle;
+                            updateAutoSaveUI();
+                            logAction('Auto-save resumed: ' + handle.name, 'sys');
+                        } else {
+                            clearFileHandle();
+                        }
+                    });
+                }
+            });
+        }).catch(function() {
+            // Handle no longer valid — clear it
+            clearFileHandle();
+        });
     }
 
     // ===== Export =====
@@ -1075,6 +1377,8 @@
 
     // ===== Pointer: pointerdown (unified mouse + touch) =====
     container.addEventListener('pointerdown', function(e) {
+        // Read-only mode: block all canvas interactions
+        if (S.readOnly) return;
         // Track pointer for pinch-to-zoom
         S.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
         var ptrCount = Object.keys(S.pointers).length;
@@ -1115,6 +1419,13 @@
             container.style.cursor = 'grabbing';
             e.preventDefault();
             container.setPointerCapture(e.pointerId);
+            return;
+        }
+        // Right-click: deferred pan — show menu immediately, start pan only on drag
+        if (e.button === 2 && !S.isDragging && !S.isResizing && !S.isDraggingConn) {
+            S._rightClickStart = { x: e.clientX, y: e.clientY };
+            S._rightClickMoved = false;
+            showContextMenuAt(e.clientX, e.clientY);
             return;
         }
         if (e.button !== 0) return;
@@ -1353,6 +1664,19 @@
             delete S._longPressStart;
         }
 
+        // Right-click deferred pan: check if moved enough to start panning
+        if (S._rightClickStart && !S._rightClickMoved) {
+            var dx = e.clientX - S._rightClickStart.x;
+            var dy = e.clientY - S._rightClickStart.y;
+            if (Math.sqrt(dx * dx + dy * dy) > 5) {
+                S._rightClickMoved = true;
+                contextMenu.classList.add('hidden');
+                S.isPanning = true;
+                S.panStart = { x: e.clientX, y: e.clientY };
+                container.style.cursor = 'grabbing';
+            }
+        }
+
         // Handle pinch-to-zoom + two-finger pan
         if (S.pinchStart && Object.keys(S.pointers).length >= 2) {
             var ptrs = Object.values(S.pointers);
@@ -1523,6 +1847,13 @@
             delete S._longPressTimer;
             delete S._longPressStart;
         }
+        // Clean up right-click deferred pan state
+        if (S._rightClickTimer) {
+            clearTimeout(S._rightClickTimer);
+            delete S._rightClickTimer;
+        }
+        delete S._rightClickStart;
+        delete S._rightClickMoved;
         // Clean up pointer tracking
         delete S.pointers[e.pointerId];
 
@@ -1708,6 +2039,13 @@
         S.isDrawing = false; S.isDraggingConn = false; S.isSelecting = false;
         previewLayer.innerHTML = '';
         updateCursor();
+        // Clean up right-click deferred pan state
+        if (S._rightClickTimer) {
+            clearTimeout(S._rightClickTimer);
+            delete S._rightClickTimer;
+        }
+        delete S._rightClickStart;
+        delete S._rightClickMoved;
     }
 
     // ===== Wheel zoom =====
@@ -1731,9 +2069,11 @@
     }, { passive: false });
 
     // ===== Context menu =====
-    container.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        // Check shapes
+    /** Show the app's context menu at the given screen coordinates.
+     *  Hit-tests shapes (topmost first) and connections to determine
+     *  what the menu applies to. */
+    function showContextMenuAt(x, y) {
+        if (S.readOnly) return;
         var shapeEls = [].slice.call(shapesLayer.querySelectorAll('.diagram-shape')).reverse();
         var found = false;
         for (var i = 0; i < shapeEls.length; i++) {
@@ -1741,24 +2081,34 @@
             var s = findShape(el.dataset.id);
             if (!s) continue;
             var r = el.getBoundingClientRect();
-            if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
                 if (!S.selection.includes(s.id)) select(s.id);
-                contextMenu.style.left = e.clientX + 'px';
-                contextMenu.style.top = e.clientY + 'px';
+                contextMenu.style.left = x + 'px';
+                contextMenu.style.top = y + 'px';
                 contextMenu.classList.remove('hidden');
                 found = true; break;
             }
         }
         if (!found) {
-            var pos = toCanvas(e.clientX, e.clientY);
+            var pos = toCanvas(x, y);
             var conn = findConnAt(pos);
             if (conn) {
                 if (!S.selection.includes(conn.id)) select(conn.id);
-                contextMenu.style.left = e.clientX + 'px';
-                contextMenu.style.top = e.clientY + 'px';
+                contextMenu.style.left = x + 'px';
+                contextMenu.style.top = y + 'px';
                 contextMenu.classList.remove('hidden');
             }
         }
+    }
+
+    container.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        // Keyboard (Shift+F10 / Menu key) — show menu at current position
+        if (!e.pointerType) {
+            showContextMenuAt(e.clientX, e.clientY);
+            return;
+        }
+        // Mouse / touch — menu already shown in pointerdown, suppress native
     });
 
     document.addEventListener('click', function(e) {
@@ -2302,9 +2652,22 @@
         logAction('New canvas created', 'sys');
     });
 
-    // Save / Load project files
+    // Save — triggers auto-save picker first time, falls back to download
     btnSaveFile.addEventListener('click', function() {
+        // If auto-save is already active, just do a manual download as backup
+        if (S.autoSaveFileHandle) {
+            downloadSaveFile();
+            return;
+        }
+        // If File System Access API is available, open picker and start auto-saving
+        if (fsApiSupported()) {
+            startAutoSave();
+        } else {
+            downloadSaveFile();
+        }
+    });
 
+    function downloadSaveFile() {
         var data = {
             shapes: S.shapes, connections: S.connections, nextId: S.nextId,
             nameCounters: S.nameCounters, connNameCounter: S.connNameCounter,
@@ -2319,8 +2682,26 @@
         a.href = URL.createObjectURL(blob);
         a.click();
         URL.revokeObjectURL(a.href);
-        logAction('Saved project file', 'sys');
-    });
+        logAction('Downloaded project file', 'sys');
+    }
+
+    function startAutoSave() {
+        var opts = {
+            suggestedName: (S.projectName || 'diagram').replace(/[^a-z0-9_-]/gi, '_') + '.json',
+            types: [{ description: 'JSON Diagram', accept: { 'application/json': ['.json'] } }]
+        };
+        window.showSaveFilePicker(opts).then(function(handle) {
+            S.autoSaveFileHandle = handle;
+            storeFileHandle(handle);
+            updateAutoSaveUI();
+            writeToAutoSaveFile();
+            logAction('Auto-save enabled: ' + handle.name, 'sys');
+        }).catch(function(err) {
+            if (err.name !== 'AbortError') {
+                console.error('Auto-save picker failed:', err);
+            }
+        });
+    }
     btnLoadFile.addEventListener('click', function() {
         var input = document.createElement('input');
         input.type = 'file';
@@ -2406,6 +2787,10 @@
     // ===== Keyboard =====
     document.addEventListener('keydown', function(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        // Read-only mode: block all mutations (Esc and zoom still work)
+        var isMutationKey = (e.key === 'Delete' || e.key === 'Backspace' ||
+            (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'y' || e.key === 'c' || e.key === 'v' || e.key === 'd' || e.key === ']' || e.key === '['));
+        if (S.readOnly && isMutationKey) return;
 
         if (e.key === 'Delete' || e.key === 'Backspace') {
             shapeSel().forEach(function(id) { deleteShape(id); });
@@ -2477,6 +2862,13 @@
             if (moon) moon.style.display = savedTheme === 'light' ? 'block' : 'none';
         })();
         readTheme();
+
+        // Set up BroadcastChannel for multi-tab coordination
+        setupBroadcastChannel();
+
+        // Try to restore File System Access auto-save handle
+        restoreAutoSaveHandle();
+        updateAutoSaveUI();
 
         // Cross-tab theme sync (F8)
         window.addEventListener('storage', function(e) {
@@ -2610,8 +3002,8 @@
 
     init();
 
-    window.addEventListener('beforeunload', saveState);
-    window.addEventListener('pagehide', saveState);
+    window.addEventListener('beforeunload', function() { saveState(); releaseChannel(); });
+    window.addEventListener('pagehide', function() { saveState(); releaseChannel(); });
     document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'hidden') saveState();
     });

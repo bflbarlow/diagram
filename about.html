@@ -384,7 +384,7 @@
             <div class="header-row">
                 <a href="index.html" class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4"/></svg> <span>diagram</span></a>
             </div>
-            <h1>diagram <span class="version" id="version-display">v1.1.2</span></h1>
+            <h1>diagram <span class="version" id="version-display">v1.1.3</span></h1>
             <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
         </header>
 
@@ -473,7 +473,15 @@
             <h2>Version History</h2>
             <div class="changelog">
                 <div class="changelog-entry">
-                    <span class="ver">1.1.2</span><span class="date">current</span>
+                    <span class="ver">1.1.3</span><span class="date">current</span>
+                    <ul>
+                        <li>Right-click deferred pan — pan canvas by right-click and drag; context menu appears immediately on right-click and hides when pan starts</li>
+                        <li>Refactored context menu — extracted hit-testing logic into shared showContextMenuAt(x, y) function for reuse</li>
+                        <li>Keyboard context menu — added Shift+F10 / Menu key support for context menu</li>
+                    </ul>
+                </div>
+                <div class="changelog-entry">
+                    <span class="ver">1.1.2</span>
                     <ul>
                         <li>Priority attachment ports — 8 snap points (corners + edge midpoints) with visual indicators when dragging connection endpoints</li>
                         <li>Connection body click — click a connection line even when it overlaps a shape</li>

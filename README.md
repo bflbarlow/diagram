@@ -1,4 +1,4 @@
-# Diagram — v1.1
+# Diagram — v1.1.3
 
 Part of the [Free Open Tools](https://freeopentools.com/) ecosystem — a suite of browser-based utilities.
 
@@ -14,7 +14,7 @@ A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript — no
 - **Font Size**: Adjustable per shape via the properties panel
 - **Custom SVG Shapes**: Paste your own SVG code to create custom shapes with full viewBox control
 - **Undo/Redo**: 50-step history
-- **Zoom & Pan**: Mouse wheel zoom, middle-mouse drag to pan
+- **Zoom & Pan**: Mouse wheel zoom, right-click drag to pan
 - **Grid & Snap**: Toggleable grid with snap-to-grid
 - **Context Menu**: Right-click for duplicate, delete, reorder, and lock/unlock
 - **Persistence**: Auto-saved to `localStorage` (survives page reload); legacy `diagramflow-*` keys migrated automatically
@@ -108,7 +108,7 @@ Create custom shapes by pasting SVG code:
 | `Enter` | Edit text of selected shape |
 | `Escape` | Deselect / cancel |
 | `+` / `-` | Zoom in / out |
-| Middle-mouse drag | Pan |
+| Right-click drag | Pan |
 
 ## File Structure
 
@@ -129,7 +129,7 @@ diagram/
 
 ## Technical Details
 
-- **Version**: 1.1.2
+- **Version**: 1.1.3
 - **Framework**: Vanilla JavaScript (ES5-compatible), no dependencies
 - **Rendering**: DOM-based shapes with inline SVG; connections rendered as SVG paths
 - **Custom SVG**: Supports pasting SVG code with auto-detected viewBox or manual viewBox controls
@@ -142,6 +142,33 @@ diagram/
 - **Canvas**: Effectively unbounded; grid layer is 10,000 × 10,000 px
 - **Persistence**: JSON serialized to `localStorage` (key: `diagram-state`) on every state change; legacy `diagramflow-*` keys migrated on load
 - **Dependencies**: `html2canvas` and `jspdf` vendored locally in `vendor/` for export (PNG, JPG, PDF)
+
+## Version History
+
+### v1.1.3 (2026-09-08)
+- **Right-click deferred pan**: Pan canvas by right-click and drag; context menu appears immediately on right-click and hides when pan starts
+- **Refactored context menu**: Extracted hit-testing logic into shared `showContextMenuAt(x, y)` function for reuse
+- **Keyboard context menu**: Added Shift+F10 / Menu key support for context menu
+- **Documentation**: Updated pan interaction docs to reflect right-click behavior
+
+### v1.1.2
+- Updated documentation
+
+### v1.1.1
+- Maintenance release
+
+### v1.1.0
+- Custom SVG shape support with auto-detected viewBox
+- Connection styling (color, width, arrows)
+- Font size control per shape
+- Undo/Redo with 50-step history
+- Lock/unlock shapes via context menu
+
+### v1.0.0
+- Initial release: rectangle, rounded rectangle, circle, diamond, triangle, terminator shapes
+- Line and arrow connections with smart snapping
+- Text labels, grid, snap-to-grid
+- Auto-save to localStorage
 
 ## Browser Support
 
