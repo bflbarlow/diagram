@@ -5,7 +5,7 @@
     'use strict';
 
     // ===== Version =====
-    var VERSION = '1.1.2';  // v1.1.2: priority attachment ports, connection-over-shape click, syntax fix
+    var VERSION = '1.1.4';  // v1.1.4: fixed undo on shape click (no-op clicks no longer create undo entries) | added arrow-key shape movement | new-line-drawing snap now matches drag-end port-snapping (port dots + outline hint) | fixed new-line preview jitter by pinning fixed start point during drag (mirrors drag-end behavior) | added Lock Aspect Ratio and Preserve SVG Aspect Ratio to properties panel
 
     // ===== Configuration =====
     var CONFIG = {
@@ -24,7 +24,17 @@
         maxZoom: 5,             // maximum zoom level
         defaultFontSize: 14,    // default font size for new shapes
         maxCanvasW: 10000,      // max canvas width user can set
-        maxCanvasH: 10000       // max canvas height user can set
+        maxCanvasH: 10000,       // max canvas height user can set
+        arrowStep: 1,            // px per arrow-key press (no modifier)
+        arrowStepBig: 10         // px per Shift+arrow-key press (when snap-to-grid is off)
+    };
+
+    // ===== Arrow-key direction mapping =====
+    var ARROW_DELTA = {
+        ArrowUp:    { dx: 0,  dy: -1 },
+        ArrowDown:  { dx: 0,  dy: 1  },
+        ArrowLeft:  { dx: -1, dy: 0  },
+        ArrowRight: { dx: 1,  dy: 0  }
     };
 
     // ===== State =====
@@ -43,6 +53,7 @@
         pointers: {}, pinchStart: null,  // active pointers for pinch-to-zoom
         nameCounters: {},            // per-type counter for shapes (string keys)
         connNameCounter: 0,          // counter for connection names
+        hoveredConnId: null,         // connection id under the cursor (JS-driven hover)
         actionLog: [],               // [{msg, cat, ts}]
         clipboard: null,               // copied shapes/connections for copy/paste
         gridSize: 20, showGrid: true, snapToGrid: true,
@@ -50,6 +61,8 @@
         projectName: 'Untitled',     // project name shown in panel
         readOnly: false,             // true when another tab is the editor
         autoSaveFileHandle: null,    // FileSystemFileHandle for native auto-save
+        _arrowMoveActive: false,     // tracks active arrow-key move gesture for undo batching
+        _arrowMoveTimer: null,       // fallback timer for arrow-move undo if keyup is missed
         channel: null,               // BroadcastChannel for multi-tab coordination
         tabId: '',                   // unique tab identifier
         metadata: {                  // document metadata
@@ -151,8 +164,8 @@
     var connArrowStart  = document.getElementById('conn-arrow-start');
     var connArrowEnd    = document.getElementById('conn-arrow-end');
     var customSvgCode   = document.getElementById('custom-svg-code');
-    var customVbW       = document.getElementById('custom-viewbox-w');
-    var customVbH       = document.getElementById('custom-viewbox-h');
+    var propLockAr      = document.getElementById('prop-lock-ar');
+    var propPreserveSvgAr = document.getElementById('prop-preserve-svg-ar');
 
     // ===== Selection helpers =====
     function isShapeId(id) { return id.charAt(0) === 's'; }
@@ -323,6 +336,20 @@
         return best;
     }
 
+    /** Shared helper: generates HTML for 8 port indicator dots on a shape, with the
+     *  nearest port to (cursorX, cursorY) highlighted in the accent color. */
+    function renderPortPreviewHTML(nearShape, cursorX, cursorY, accent) {
+        var html = '';
+        var portR = 14 / S.zoom;
+        var ports = shapePorts(nearShape);
+        var nearPort = nearestPort({ x: cursorX, y: cursorY }, nearShape, portR);
+        ports.forEach(function(p) {
+            var isNearest = nearPort && p.x === nearPort.port.x && p.y === nearPort.port.y;
+            html += '<div style="position:absolute;left:'+(p.x-4)+'px;top:'+(p.y-4)+'px;width:8px;height:8px;border-radius:50%;border:2px solid '+accent+';background:'+(isNearest ? accent : 'transparent')+';opacity:'+(isNearest ? '1' : '0.5')+'"></div>';
+        });
+        return html;
+    }
+
     // ===== Shape/connection lookup =====
     function findShape(id) { return S.shapes.find(function(s) { return s.id === id; }); }
     function findConn(id)  { return S.connections.find(function(c) { return c.id === id; }); }
@@ -483,6 +510,14 @@
                     savedAt: d.metadata.savedAt || null
                 };
             }
+            // Backfill new properties for shapes loaded from old state
+            S.shapes.forEach(function(s) {
+                if (!s || typeof s !== 'object') return;
+                if (s.lockAspectRatio === undefined) s.lockAspectRatio = false;
+                if (s.type === 'custom' && s.preserveSvgAspectRatio === undefined) {
+                    s.preserveSvgAspectRatio = false;
+                }
+            });
             S.selection = [];
             renderGrid(); render(); applyTransform();
             // Update toolbar inputs
@@ -779,10 +814,31 @@
         });
     }
     function pushUndo() {
+        if (S._batchUndo) return;
         S.undoStack.push(JSON.stringify({ shapes: S.shapes, connections: S.connections }));
         if (S.undoStack.length > CONFIG.maxUndo) S.undoStack.shift();
         S.redoStack = [];
         scheduleSave();
+    }
+
+    // ===== Arrow-key move undo batching =====
+    // Arrow-move applies position updates on every keydown (live visual feedback)
+    // but batches the undo snapshot per contiguous key-hold gesture, mirroring
+    // mouse-drag semantics where pushUndo() fires once on pointerup.
+    function scheduleArrowUndo() {
+        if (!S._arrowMoveActive) {
+            S._arrowMoveActive = true;
+            logAction('Moved '+shapeSel().length+' shape(s) (arrow key)', 'move');
+        }
+        // Safety fallback: if keyup never fires (focus loss, alt-tab), commit after a pause.
+        clearTimeout(S._arrowMoveTimer);
+        S._arrowMoveTimer = setTimeout(commitArrowMove, 500);
+    }
+    function commitArrowMove() {
+        if (!S._arrowMoveActive) return;
+        S._arrowMoveActive = false;
+        clearTimeout(S._arrowMoveTimer);
+        pushUndo();
     }
     function undo() {
         if (!S.undoStack.length) return;
@@ -822,11 +878,12 @@
             locked: false, fontSize: CONFIG.defaultFontSize,
             textPad: 8,
             zHeight: 0,
-            hidden: false
+            hidden: false,
+            lockAspectRatio: false
         };
-        if (type === 'custom') { s.customSvg = ''; }
+        if (type === 'custom') { s.customSvg = ''; s.preserveSvgAspectRatio = false; }
         S.shapes.push(s);
-        scheduleSave();
+        pushUndo();
         logAction('Created '+s.name, 'add');
         return s;
     }
@@ -845,7 +902,7 @@
             arrowEnd: arrowEnd || false
         };
         S.connections.push(c);
-        scheduleSave();
+        pushUndo();
         logAction('Connected '+shapeName(c.from)+' → '+shapeName(c.to), 'add');
     }
 
@@ -854,14 +911,14 @@
         S.shapes = S.shapes.filter(function(s) { return s.id !== id; });
         S.selection = S.selection.filter(function(sid) { return sid !== id; });
         S.connections = S.connections.filter(function(c) { return c.from !== id && c.to !== id; });
-        scheduleSave();
+        pushUndo();
         if (s) logAction('Deleted '+s.name, 'del');
     }
 
     function deleteConn(id) {
         S.connections = S.connections.filter(function(c) { return c.id !== id; });
         S.selection = S.selection.filter(function(sid) { return sid !== id; });
-        scheduleSave();
+        pushUndo();
         logAction('Deleted '+connName(id), 'del');
     }
 
@@ -992,37 +1049,115 @@
                        (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-opacity="'+so+'" stroke-width="'+sw+'" rx="'+(rx-o)+'"/>' : '');
             case 'custom':
                 var inner = (s.customSvg || '').trim();
-                var cw = s.customW || (inner ? 100 : w);
-                var ch = s.customH || (inner ? 100 : h);
                 if (!inner) {
                     return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'" opacity="0.4"/>' +
                            '<text x="'+(w/2)+'" y="'+(h/2)+'" text-anchor="middle" dominant-baseline="middle" font-size="12" fill="'+sc+'">Custom</text>';
                 }
-                // Strip outer <svg> wrapper from user content if present, so we
-                // control the viewBox ourselves via customW/customH.
+                // Try to extract viewBox from outer <svg> tag first (authoritative).
+                // Only fall back to element-scanning when there is no outer tag or no viewBox.
+                var ext = null;
                 var m = inner.match(/<svg\b[^>]*>/i);
                 if (m) {
-                    inner = inner.replace(/<svg\b[^>]*>/i, '').replace(/<\/svg>\s*$/i, '');
-                    // Try to read viewBox from the stripped tag to keep coords in sync
                     var vb = m[0].match(/viewBox\s*=\s*["']([^"']*)["']/i);
                     if (vb) {
                         var parts = vb[1].split(/[\s,]+/);
                         if (parts.length >= 4) {
                             var pw = parseFloat(parts[2]), ph = parseFloat(parts[3]);
-                            if (pw > 0 && ph > 0 && (!s.customW || !s.customH)) {
-                                s.customW = pw; s.customH = ph;
-                                cw = pw; ch = ph;
-                            }
+                            if (pw > 0 && ph > 0) ext = { w: pw, h: ph };
                         }
                     }
+                    inner = inner.replace(/<svg\b[^>]*>/i, '').replace(/<\/svg>\s*$/i, '');
                 }
-                // Nested SVG fills shape bounds exactly; preserveAspectRatio=none
-                // stretches user coords (0..customW × 0..customH) to match shape size.
-                return '<svg x="0" y="0" width="'+w+'" height="'+h+'" viewBox="0 0 '+cw+' '+ch+'" preserveAspectRatio="none" overflow="hidden">'+inner+'</svg>';
+                if (!ext) ext = computeSvgExtent(inner);
+                var par = s.preserveSvgAspectRatio ? 'xMidYMid meet' : 'none';
+                return '<svg x="0" y="0" width="'+w+'" height="'+h+'" viewBox="0 0 '+ext.w+' '+ext.h+'" preserveAspectRatio="'+par+'" overflow="hidden">'+inner+'</svg>';
             default:
                 return '<rect width="'+w+'" height="'+h+'" fill="'+fc+'"/>' +
                        (sw ? '<rect x="'+o+'" y="'+o+'" width="'+(w-sw)+'" height="'+(h-sw)+'" fill="none" stroke="'+sc+'" stroke-width="'+sw+'"/>' : '');
         }
+    }
+
+    /** Compute the coordinate extent (width, height) of SVG content by examining
+     *  element attributes.  Falls back to 100×100 when no coordinates are found. */
+    function computeSvgExtent(inner) {
+        if (!inner) return { w: 100, h: 100 };
+        var maxX = 0, maxY = 0;
+        // Helper: extract a numeric attribute from an element string
+        function attr(el, name) {
+            var re = new RegExp(name + '\\s*=\\s*[\"\']([\\d.]+)[\"\']', 'i');
+            var mm = el.match(re);
+            return mm ? parseFloat(mm[1]) : null;
+        }
+        // Scan each SVG element tag in the content
+        var tags = inner.match(/<\w+[^>]*>/gi);
+        if (tags) {
+            for (var i = 0; i < tags.length; i++) {
+                var el = tags[i];
+                // Positional attributes
+                var x  = attr(el, 'x');
+                var cx = attr(el, 'cx');
+                var x1 = attr(el, 'x1');
+                var x2 = attr(el, 'x2');
+                var y  = attr(el, 'y');
+                var cy = attr(el, 'cy');
+                var y1 = attr(el, 'y1');
+                var y2 = attr(el, 'y2');
+                // Dimensional attributes
+                var w  = attr(el, 'width');
+                var h  = attr(el, 'height');
+                var r  = attr(el, 'r');
+                var rx = attr(el, 'rx');
+                var ry = attr(el, 'ry');
+                // X extent — use cx if available (plus radius), else x+width
+                if (cx !== null) {
+                    maxX = Math.max(maxX, cx + (r || rx || 0));
+                } else if (x !== null) {
+                    maxX = Math.max(maxX, x + (w || 0));
+                } else if (w !== null && x === null) {
+                    maxX = Math.max(maxX, w);
+                }
+                if (x1 !== null) maxX = Math.max(maxX, x1);
+                if (x2 !== null) maxX = Math.max(maxX, x2);
+                // Y extent — use cy if available (plus radius), else y+height
+                if (cy !== null) {
+                    maxY = Math.max(maxY, cy + (r || ry || 0));
+                } else if (y !== null) {
+                    maxY = Math.max(maxY, y + (h || 0));
+                } else if (h !== null && y === null) {
+                    maxY = Math.max(maxY, h);
+                }
+                if (y1 !== null) maxY = Math.max(maxY, y1);
+                if (y2 !== null) maxY = Math.max(maxY, y2);
+                // Polygon / polyline points
+                var pts = el.match(/points\s*=\s*[\"\']([^\"\']*)[\"\']/i);
+                if (pts) {
+                    var nums = pts[1].split(/[\s,]+/);
+                    for (var p = 0; p < nums.length; p++) {
+                        var n = parseFloat(nums[p]);
+                        if (!isNaN(n)) {
+                            if (p % 2 === 0) maxX = Math.max(maxX, n);
+                            else maxY = Math.max(maxY, n);
+                        }
+                    }
+                }
+                // Path d attribute
+                var d = el.match(/d\s*=\s*[\"\']([^\"\']*)[\"\']/i);
+                if (d) {
+                    var coords = d[1].match(/[\d.]+/g);
+                    if (coords) {
+                        for (var c = 0; c < coords.length; c++) {
+                            var cn = parseFloat(coords[c]);
+                            if (!isNaN(cn)) {
+                                if (c % 2 === 0) maxX = Math.max(maxX, cn);
+                                else maxY = Math.max(maxY, cn);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (maxX <= 0 || maxY <= 0) { maxX = 100; maxY = 100; }
+        return { w: maxX, h: maxY };
     }
 
     /** Helper: given a shape and an absolute canvas point on its perimeter, return
@@ -1094,7 +1229,7 @@
                 triangle: '<path d="M12 3l9 15H3z"/>',
                 terminator: '<rect x="3" y="3" width="18" height="18" rx="9"/>',
                 line: '<line x1="3" y1="21" x2="21" y2="3"/>',
-                text: '<path d="M3 7h18M12 4v16M5 20h14"/>'
+                text: '<path d="M4 5h16M12 5v14M8 18h8"/>'
             };
             return icons[type] || icons.rect;
         }
@@ -1235,11 +1370,22 @@
             }
             var el = document.createElement('div');
             el.className = 'diagram-conn';
+            el.dataset.connId = c.id;
             el.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:'+connZ(c)+';pointer-events:none;';
-            el.innerHTML = '<svg style="position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible">'+
-                '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none"'+
-                (sel ? ' class="conn-sel"' : '')+'/>'+arrowEls+'</svg>';
+            var pathClasses = sel ? 'conn-sel' : '';
+            var pathHtml = '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none"' +
+                (pathClasses ? ' class="'+pathClasses+'"' : '')+'/>'+arrowEls;
+            el.innerHTML = '<svg style="position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible">'+pathHtml+'</svg>';
             shapesLayer.appendChild(el);
+
+            // Restore hover state on the re-rendered path
+            if (S.hoveredConnId === c.id && !sel) {
+                var hp = el.querySelector('svg path');
+                if (hp) {
+                    hp.classList.add('conn-hover');
+                    hp.setAttribute('stroke-width', (c.sw || 2) + 3);
+                }
+            }
         });
     }
 
@@ -1300,8 +1446,6 @@
                 customEl.classList.remove('hidden');
                 if (styleEl) styleEl.classList.add('hidden');
                 customSvgCode.value = s.customSvg || '';
-                customVbW.value = s.customW || '';
-                customVbH.value = s.customH || '';
             } else {
                 customEl.classList.add('hidden');
                 if (styleEl) styleEl.classList.remove('hidden');
@@ -1315,6 +1459,11 @@
             propNameInput.value = s.name || '';
             propZHeight.value = s.zHeight || 0;
             propTextPad.value = s.textPad || 0;
+            if (propLockAr) propLockAr.checked = s.lockAspectRatio || false;
+            if (propPreserveSvgAr) {
+                propPreserveSvgAr.checked = s.preserveSvgAspectRatio || false;
+                propPreserveSvgAr.style.display = s.type === 'custom' ? '' : 'none';
+            }
             syncStyleControlsToShape(s);
         } else {
             // Show project properties
@@ -1335,9 +1484,45 @@
         zoomDisplay.textContent = Math.round(S.zoom * 100) + '%';
     }
 
+    var CURSOR_MAP = { select: 'default', text: 'text' };
     function updateCursor() {
-        var map = { select: 'default', text: 'text' };
-        container.style.cursor = map[S.tool] || 'crosshair';
+        container.style.cursor = CURSOR_MAP[S.tool] || 'crosshair';
+    }
+
+    /** Keep body classes in sync with active tool (enables tool-scoped CSS hover rules) */
+    function updateToolBodyClass() {
+        document.body.classList.toggle('tool-select', S.tool === 'select');
+        document.body.classList.toggle('tool-line', S.tool === 'line');
+    }
+
+    /** Toggle connection hover highlight by surgical DOM class (no full re-render) */
+    function setHoveredConn(id) {
+        if (S.hoveredConnId === id) return;
+        // Clear old hover
+        if (S.hoveredConnId) {
+            var oldPath = shapesLayer.querySelector('.diagram-conn[data-conn-id="' + S.hoveredConnId + '"] svg path');
+            if (oldPath) {
+                oldPath.classList.remove('conn-hover');
+                // Restore original stroke-width stored on first hover, or just remove the attr
+                if (oldPath.dataset && oldPath.dataset.baseSw !== undefined) {
+                    oldPath.setAttribute('stroke-width', oldPath.dataset.baseSw);
+                    delete oldPath.dataset.baseSw;
+                }
+            }
+        }
+        S.hoveredConnId = id;
+        // Set new hover
+        if (id) {
+            var c = findConn(id);
+            var newPath = shapesLayer.querySelector('.diagram-conn[data-conn-id="' + id + '"] svg path');
+            if (newPath && c) {
+                newPath.classList.add('conn-hover');
+                // Save original stroke-width before bumping
+                newPath.dataset.baseSw = newPath.getAttribute('stroke-width') || (c.sw || 2);
+                // Bump stroke-width for visual weight (CSS filter alone is subtle on thin lines)
+                newPath.setAttribute('stroke-width', Math.max(3, (c.sw || 2) + 2));
+            }
+        }
     }
 
     // ===== Style application =====
@@ -1366,7 +1551,14 @@
     /** Called when the user clicks a shape with the line tool. Shows a snap at the
      *  start point immediately and draws a temporary preview line. */
     function startDrawingFromShape(shape, pos) {
-        var ep = getShapeOutlinePoint(shape, pos.x, pos.y);
+        // Check for port snap first so the initial click snaps to a named port when close
+        var portSnap = nearestPort(pos, shape, 14 / S.zoom);
+        var ep;
+        if (portSnap) {
+            ep = { x: portSnap.port.x, y: portSnap.port.y };
+        } else {
+            ep = getShapeOutlinePoint(shape, pos.x, pos.y);
+        }
         S.drawStart.x = ep.x;
         S.drawStart.y = ep.y;
         var ac = T.accent || '#2563EB';
@@ -1602,9 +1794,11 @@
             return;
         }
         if (S.tool === 'text') {
+            S._batchUndo = true;
             var ts = addShape('rect', sx, sy, 150, 50);
             ts.text = 'Text';
             ts.fill = 'transparent'; ts.stroke = 'transparent'; ts.sw = 0;
+            S._batchUndo = false;
             pushUndo();
             select(ts.id);
             render();
@@ -1721,10 +1915,48 @@
                 var s = findShape(id);
                 if (!s) return;
                 var nw = rs.sw, nh = rs.sh, nx = s.x, ny = s.y;
-                if (h.includes('e')) nw = Math.max(CONFIG.minShapeSize, rs.sw + dx);
-                if (h.includes('w')) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nx = rs.sx + rs.sw - nw; }
-                if (h.includes('s')) nh = Math.max(CONFIG.minShapeSize, rs.sh + dy);
-                if (h.includes('n')) { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); ny = rs.sy + rs.sh - nh; }
+                if (s.lockAspectRatio && rs.sh > 0 && rs.sw > 0) {
+                    // Locked aspect ratio resize — use original shape ratio
+                    var ratio = rs.sw / rs.sh;
+                    // Edge handles: the single axis drives both dimensions
+                    if (h.includes('e') || h.includes('w')) {
+                        if (h.includes('e')) nw = Math.max(CONFIG.minShapeSize, rs.sw + dx);
+                        if (h.includes('w')) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nx = rs.sx + rs.sw - nw; }
+                        nh = nw / ratio;
+                        if (h.includes('n')) ny = rs.sy + rs.sh - nh;
+                    } else if (h.includes('s') || h.includes('n')) {
+                        if (h.includes('s')) nh = Math.max(CONFIG.minShapeSize, rs.sh + dy);
+                        if (h.includes('n')) { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); ny = rs.sy + rs.sh - nh; }
+                        nw = nh * ratio;
+                        if (h.includes('w')) nx = rs.sx + rs.sw - nw;
+                    }
+                    // Corner handles: use the larger absolute delta to drive resize
+                    if (h === 'se' || h === 'sw' || h === 'ne' || h === 'nw') {
+                        var useDx = Math.abs(dx) >= Math.abs(dy);
+                        if (h === 'se') {
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw + dx); nh = nw / ratio; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh + dy); nw = nh * ratio; }
+                        } else if (h === 'sw') {
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nh = nw / ratio; nx = rs.sx + rs.sw - nw; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh + dy); nw = nh * ratio; nx = rs.sx + rs.sw - nw; }
+                        } else if (h === 'ne') {
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw + dx); nh = nw / ratio; ny = rs.sy + rs.sh - nh; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); nw = nh * ratio; ny = rs.sy + rs.sh - nh; }
+                        } else if (h === 'nw') {
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nh = nw / ratio; nx = rs.sx + rs.sw - nw; ny = rs.sy + rs.sh - nh; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); nw = nh * ratio; nx = rs.sx + rs.sw - nw; ny = rs.sy + rs.sh - nh; }
+                        }
+                    }
+                    // Enforce minShapeSize on both dimensions with ratio
+                    if (nw < CONFIG.minShapeSize) { nw = CONFIG.minShapeSize; nh = nw / ratio; }
+                    if (nh < CONFIG.minShapeSize) { nh = CONFIG.minShapeSize; nw = nh * ratio; }
+                } else {
+                    // Original independent resize (unchanged)
+                    if (h.includes('e')) nw = Math.max(CONFIG.minShapeSize, rs.sw + dx);
+                    if (h.includes('w')) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nx = rs.sx + rs.sw - nw; }
+                    if (h.includes('s')) nh = Math.max(CONFIG.minShapeSize, rs.sh + dy);
+                    if (h.includes('n')) { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); ny = rs.sy + rs.sh - nh; }
+                }
                 s.x = snap(nx); s.y = snap(ny); s.width = snap(nw); s.height = snap(nh);
                 clampShape(s);
             });
@@ -1764,18 +1996,12 @@
                 var nearShape = findNearestShape(pos, snapThresh3);
                 var ac3 = T.accent || '#2563EB';
                 var preview = '';
-                var portR = 14 / S.zoom; // port snap radius in canvas coords
                 if (nearShape) {
                     preview = '<div class="snap-highlight" style="left:'+nearShape.x+'px;top:'+nearShape.y+'px;width:'+nearShape.width+'px;height:'+nearShape.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
-                    // Draw 8 port indicators
-                    var ports = shapePorts(nearShape);
-                    var draggedEp = endId === connD.from ? { x: pos.x, y: pos.y } : { x: pos.x, y: pos.y };
+                    // Draw 8 port indicators via shared helper
+                    var draggedEp = { x: pos.x, y: pos.y };
                     if (endShape && endShape.isAnchor) { draggedEp.x = endShape.x + 5; draggedEp.y = endShape.y + 5; }
-                    var nearPort = nearestPort(draggedEp, nearShape, portR);
-                    ports.forEach(function(p) {
-                        var isNearest = nearPort && p.x === nearPort.port.x && p.y === nearPort.port.y;
-                        preview += '<div style="position:absolute;left:'+(p.x-4)+'px;top:'+(p.y-4)+'px;width:8px;height:8px;border-radius:50%;border:2px solid '+ac3+';background:'+(isNearest ? ac3 : 'transparent')+';opacity:'+(isNearest ? '1' : '0.5')+'"></div>';
-                    });
+                    preview += renderPortPreviewHTML(nearShape, draggedEp.x, draggedEp.y, ac3);
                 }
                 var epLive = connEndpoints(connD);
                 preview += '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+epLive.x1+','+epLive.y1+' L'+epLive.x2+','+epLive.y2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
@@ -1822,20 +2048,35 @@
                 var ac2 = T.accent || '#2563EB';
                 previewLayer.innerHTML = '<div style="position:absolute;left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+h+'px;border:2px dashed '+ac2+';background:rgba(37,99,235,0.1)"></div>';
             } else {
-                // Line preview
+                // Line preview — mirrors drag-end behavior exactly:
+                // the fixed start point never moves/re-projects during the drag (just like a
+                // drag-end's fixed endpoint), and only the moving (cursor) end gets a snap
+                // highlight + port hint. Real snapping only happens once, on commit.
                 var snapThresh = CONFIG.snapPx / S.zoom;
-                var ss2 = S.drawStartShapeId ? findShape(S.drawStartShapeId) : findNearestShape(S.drawStart, snapThresh);
                 var se2 = findNearestShape({ x: sx, y: sy }, snapThresh);
                 var lx1 = S.drawStart.x, ly1 = S.drawStart.y;
                 var lx2 = sx, ly2 = sy;
-                if (ss2) { var op = getShapeOutlinePoint(ss2, lx2, ly2); lx1 = op.x; ly1 = op.y; }
-                if (se2) { var op2 = getShapeOutlinePoint(se2, lx1, ly1); lx2 = op2.x; ly2 = op2.y; }
                 var ac3 = T.accent || '#2563EB';
-                var highlight = '';
-                if (ss2) highlight += '<div class="snap-highlight" style="left:'+ss2.x+'px;top:'+ss2.y+'px;width:'+ss2.width+'px;height:'+ss2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
-                if (se2 && se2 !== ss2) highlight += '<div class="snap-highlight" style="left:'+se2.x+'px;top:'+se2.y+'px;width:'+se2.width+'px;height:'+se2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
-                previewLayer.innerHTML = highlight + '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+lx1+','+ly1+' L'+lx2+','+ly2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
+                var previewHTML = '';
+                if (se2 && !se2.isAnchor) {
+                    previewHTML += '<div class="snap-highlight" style="left:'+se2.x+'px;top:'+se2.y+'px;width:'+se2.width+'px;height:'+se2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
+                    previewHTML += renderPortPreviewHTML(se2, sx, sy, ac3);
+                }
+                previewLayer.innerHTML = previewHTML + '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+lx1+','+ly1+' L'+lx2+','+ly2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
             }
+        }
+
+        // Connection hover detection (only when idle and in select tool)
+        if (S.tool === 'select' && !S.isPanning && !S.isDragging && !S.isResizing &&
+            !S.isDraggingConn && !S.isDrawing && !S.isSelecting && !S.pinchStart) {
+            var hoverPos2 = toCanvas(e.clientX, e.clientY);
+            var hoverConn = findConnAt(hoverPos2);
+            setHoveredConn(hoverConn ? hoverConn.id : null);
+            // Update cursor for connection hover
+            container.style.cursor = hoverConn ? 'pointer' : (CURSOR_MAP[S.tool] || 'crosshair');
+        } else {
+            // Clear hover if we're in a gesture or wrong tool
+            if (S.hoveredConnId) setHoveredConn(null);
         }
     });
 
@@ -1865,14 +2106,34 @@
 
         if (S.isPanning) { S.isPanning = false; updateCursor(); container.releasePointerCapture(e.pointerId); return; }
         if (S.isResizing || S.isDragging) {
-            if (S.isDragging) logAction('Moved '+shapeSel().length+' shape(s)', 'move');
-            if (S.isResizing) logAction('Resized '+shapeSel().map(shapeName).join(', '), 'edit');
+            // Check if anything actually changed — skip pushUndo for no-op clicks
+            var _didChange = false;
+            if (S.isResizing) {
+                var _rs = S.resizeStart;
+                var _hitShape = findShape(shapeSel()[0]);
+                if (_hitShape) {
+                    _didChange = _hitShape.x !== _rs.sx || _hitShape.y !== _rs.sy ||
+                                 _hitShape.width !== _rs.sw || _hitShape.height !== _rs.sh;
+                }
+            } else {
+                _didChange = S.dragOrigin && S.dragOrigin.some(function(orig, i) {
+                    var s = findShape(shapeSel()[i]);
+                    return s && (s.x !== orig.x || s.y !== orig.y);
+                });
+            }
+            if (_didChange) {
+                if (S.isDragging) logAction('Moved '+shapeSel().length+' shape(s)', 'move');
+                if (S.isResizing) logAction('Resized '+shapeSel().map(shapeName).join(', '), 'edit');
+                pushUndo(); render();
+            } else {
+                render();
+            }
             S.isResizing = false; S.isDragging = false;
-            pushUndo(); render();
             container.releasePointerCapture(e.pointerId);
             return;
         }
         if (S.isDraggingConn) {
+            S._batchUndo = true;
             var cd = findConn(S.dragConnId);
 
             if (S.dragConnEnd && cd) {
@@ -1948,6 +2209,7 @@
             S.dragConnEnd = null;
             S.dragConnAnchors = null;
             previewLayer.innerHTML = '';
+            S._batchUndo = false;
             pushUndo(); render();
             container.releasePointerCapture(e.pointerId);
             return;
@@ -1965,8 +2227,10 @@
                 var sh2 = Math.abs(ey - S.drawStart.y);
                 if (sw2 < 5 && sh2 < 5) {
                     // Tiny drag — place a default-sized shape
+                    S._batchUndo = true;
                     var dShape = addShape(pendingShape.shape, snap(S.drawStart.x) - pendingShape.w/2, snap(S.drawStart.y) - pendingShape.h/2, pendingShape.w, pendingShape.h);
                     clampShape(dShape);
+                    S._batchUndo = false;
                     pushUndo();
                     select(dShape.id);
                     render();
@@ -1981,8 +2245,10 @@
                 var y = Math.min(S.drawStart.y, ey);
                 if (sw2 < CONFIG.minShapeSize) sw2 = CONFIG.minShapeSize;
                 if (sh2 < CONFIG.minShapeSize) sh2 = CONFIG.minShapeSize;
+                S._batchUndo = true;
                 var shape = addShape(pendingShape.shape, x, y, sw2, sh2);
                 clampShape(shape);
+                S._batchUndo = false;
                 pushUndo();
                 select(shape.id);
                 render();
@@ -1994,16 +2260,43 @@
                 return;
             }
 
-            // Snap endpoints to nearby shape outlines
+            // Snap endpoints to nearby shape outlines (with port check first, matching drag-end)
             var snpPx = CONFIG.snapPx / S.zoom;
             var sxSnap = S.drawStartShapeId ? findShape(S.drawStartShapeId) : findNearestShape(S.drawStart, snpPx);
             var seSnap = findNearestShape(rawPos, snpPx);
             var fromX = S.drawStart.x, fromY = S.drawStart.y;
             var toX = ex, toY = ey;
-            if (sxSnap) { var p = getShapeOutlinePoint(sxSnap, toX, toY); fromX = p.x; fromY = p.y; }
-            if (seSnap) { var p2 = getShapeOutlinePoint(seSnap, fromX, fromY); toX = p2.x; toY = p2.y; }
+            if (sxSnap) {
+                var portSnapStart = nearestPort({ x: S.drawStart.x, y: S.drawStart.y }, sxSnap, 14 / S.zoom);
+                if (portSnapStart) {
+                    fromX = portSnapStart.port.x;
+                    fromY = portSnapStart.port.y;
+                } else {
+                    // Project toward the start shape's OWN click position, not the
+                    // other endpoint. Using the other endpoint here would produce the
+                    // shortest-distance point between the two shapes instead of
+                    // honoring where the user actually clicked.
+                    var p = getShapeOutlinePoint(sxSnap, S.drawStart.x, S.drawStart.y);
+                    fromX = p.x;
+                    fromY = p.y;
+                }
+            }
+            if (seSnap) {
+                var portSnapEnd = nearestPort({ x: rawPos.x, y: rawPos.y }, seSnap, 14 / S.zoom);
+                if (portSnapEnd) {
+                    toX = portSnapEnd.port.x;
+                    toY = portSnapEnd.port.y;
+                } else {
+                    // Project toward the end shape's OWN release position, not the
+                    // other endpoint. Same fix as above, applied symmetrically.
+                    var p2 = getShapeOutlinePoint(seSnap, rawPos.x, rawPos.y);
+                    toX = p2.x;
+                    toY = p2.y;
+                }
+            }
             S.drawStartShapeId = null;
             // Connect directly to shapes for snapped endpoints; use anchor circles for free ends
+            S._batchUndo = true;
             var fromId, toId, fromRel = null, toRel = null;
             if (sxSnap) {
                 fromId = sxSnap.id;
@@ -2023,6 +2316,7 @@
             }
             addConn(fromId, toId, false, false, fromRel, toRel);
             console.debug('line tool: committed connection', fromId, '→', toId, '| sxSnap:', !!sxSnap, 'seSnap:', !!seSnap, '| rels:', fromRel, toRel);
+            S._batchUndo = false;
             pushUndo();
             render();
             container.releasePointerCapture(e.pointerId);
@@ -2038,6 +2332,7 @@
         S.isPanning = false; S.isDragging = false; S.isResizing = false;
         S.isDrawing = false; S.isDraggingConn = false; S.isSelecting = false;
         previewLayer.innerHTML = '';
+        setHoveredConn(null);
         updateCursor();
         // Clean up right-click deferred pan state
         if (S._rightClickTimer) {
@@ -2140,10 +2435,13 @@
     document.querySelectorAll('[data-tool]').forEach(function(btn) {
         btn.addEventListener('click', function() {
             S.tool = btn.dataset.tool;
+            setHoveredConn(null);
             pendingShape = null;
+            deselectAll();
             clearToolActive();
             btn.classList.add('active');
             updateCursor();
+            updateToolBodyClass();
             logAction('Tool: '+S.tool, 'sys');
         });
     });
@@ -2167,8 +2465,10 @@
     container.addEventListener('click', function(e) {
         if (!pendingShape || S.isDragging || S.isResizing || S.isDraggingConn) return;
         var pos = toCanvas(e.clientX, e.clientY);
+        S._batchUndo = true;
         var shape = addShape(pendingShape.shape, snap(pos.x) - pendingShape.w/2, snap(pos.y) - pendingShape.h/2, pendingShape.w, pendingShape.h);
         clampShape(shape);
+        S._batchUndo = false;
         pushUndo();
         select(shape.id);
         render();
@@ -2186,21 +2486,25 @@
         pushUndo(); render();
     });
     document.getElementById('btn-delete').addEventListener('click', function() {
+        S._batchUndo = true;
         shapeSel().forEach(function(id) { deleteShape(id); });
         connSel().forEach(function(id) { deleteConn(id); });
         S.selection = [];
+        S._batchUndo = false;
         pushUndo(); render();
     });
     document.getElementById('btn-grid').addEventListener('click', function() {
         S.showGrid = !S.showGrid;
         this.classList.toggle('active', S.showGrid);
         logAction('Grid: '+(S.showGrid?'on':'off'), 'sys');
+        pushUndo();
         renderGrid();
     });
     document.getElementById('btn-snap').addEventListener('click', function() {
         S.snapToGrid = !S.snapToGrid;
         this.classList.toggle('active', S.snapToGrid);
         logAction('Snap: '+(S.snapToGrid?'on':'off'), 'sys');
+        pushUndo();
     });
     document.getElementById('btn-zoom-in').addEventListener('click', function() {
         S.zoom = clamp(S.zoom + CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom);
@@ -2295,56 +2599,56 @@
 
     // ===== Toolbar style controls (apply to selected shapes) =====
     fillInput.addEventListener('input', function()      { applyStyleToSelected('fill', fillInput.value); });
-    fillInput.addEventListener('change', function()      { scheduleSave(); });
+    fillInput.addEventListener('change', function()      { pushUndo(); });
     strokeInput.addEventListener('input', function()    { applyStyleToSelected('stroke', strokeInput.value); });
-    strokeInput.addEventListener('change', function()    { scheduleSave(); });
+    strokeInput.addEventListener('change', function()    { pushUndo(); });
     swInput.addEventListener('input', function()        { applyStyleToSelected('sw', parseInt(swInput.value) || 0); });
-    swInput.addEventListener('change', function()        { scheduleSave(); });
+    swInput.addEventListener('change', function()        { pushUndo(); });
     opacityInput.addEventListener('input', function()   { applyStyleToSelected('opacity', parseInt(opacityInput.value) / 100); });
-    opacityInput.addEventListener('change', function()   { scheduleSave(); });
+    opacityInput.addEventListener('change', function()   { pushUndo(); });
     textColorInput.addEventListener('input', function() { applyStyleToSelected('textColor', textColorInput.value); });
-    textColorInput.addEventListener('change', function() { scheduleSave(); });
+    textColorInput.addEventListener('change', function() { pushUndo(); });
 
     // ===== Props panel style controls (two-way sync with toolbar) =====
     propFill.addEventListener('input', function() {
         applyStyleToSelected('fill', propFill.value);
         fillInput.value = propFill.value;
     });
-    propFill.addEventListener('change', function() { scheduleSave(); });
+    propFill.addEventListener('change', function() { pushUndo(); });
     propStroke.addEventListener('input', function() {
         applyStyleToSelected('stroke', propStroke.value);
         strokeInput.value = propStroke.value;
     });
-    propStroke.addEventListener('change', function() { scheduleSave(); });
+    propStroke.addEventListener('change', function() { pushUndo(); });
     propSw.addEventListener('input', function() {
         applyStyleToSelected('sw', parseInt(propSw.value) || 0);
         swInput.value = propSw.value;
     });
-    propSw.addEventListener('change', function() { scheduleSave(); });
+    propSw.addEventListener('change', function() { pushUndo(); });
     propOpacity.addEventListener('input', function() {
         applyStyleToSelected('opacity', parseInt(propOpacity.value) / 100);
         opacityInput.value = propOpacity.value;
     });
-    propOpacity.addEventListener('change', function() { scheduleSave(); });
+    propOpacity.addEventListener('change', function() { pushUndo(); });
 
     if (propFillOpacity) {
         propFillOpacity.addEventListener('input', function() {
             applyStyleToSelected('fillOpacity', parseInt(propFillOpacity.value) / 100);
         });
-        propFillOpacity.addEventListener('change', function() { scheduleSave(); render(); });
+        propFillOpacity.addEventListener('change', function() { pushUndo(); render(); });
     }
     if (propStrokeOpacity) {
         propStrokeOpacity.addEventListener('input', function() {
             applyStyleToSelected('strokeOpacity', parseInt(propStrokeOpacity.value) / 100);
         });
-        propStrokeOpacity.addEventListener('change', function() { scheduleSave(); render(); });
+        propStrokeOpacity.addEventListener('change', function() { pushUndo(); render(); });
     }
 
     propTextColor.addEventListener('input', function() {
         applyStyleToSelected('textColor', propTextColor.value);
         textColorInput.value = propTextColor.value;
     });
-    propTextColor.addEventListener('change', function() { scheduleSave(); });
+    propTextColor.addEventListener('change', function() { pushUndo(); });
     propFontSize.addEventListener('input', function() {
         var v = parseInt(propFontSize.value) || CONFIG.defaultFontSize;
         shapeSel().forEach(function(sid) {
@@ -2354,7 +2658,7 @@
         logAction('Font size → '+v, 'edit');
         render();
     });
-    propFontSize.addEventListener('change', function() { scheduleSave(); });
+    propFontSize.addEventListener('change', function() { pushUndo(); });
 
     // Text alignment
     propTextAlign.addEventListener('change', function() {
@@ -2363,7 +2667,7 @@
             if (s) s.textAlign = propTextAlign.value;
         });
         logAction('Text align → '+propTextAlign.value, 'edit');
-        scheduleSave();
+        pushUndo();
         render();
     });
 
@@ -2375,7 +2679,57 @@
         });
         render();
     });
-    propTextPad.addEventListener('change', function() { scheduleSave(); });
+    propTextPad.addEventListener('change', function() { pushUndo(); });
+
+    // Lock Aspect Ratio checkbox
+    if (propLockAr) {
+        propLockAr.addEventListener('change', function() {
+            shapeSel().forEach(function(sid) {
+                var s = findShape(sid);
+                if (s) s.lockAspectRatio = propLockAr.checked;
+            });
+            logAction('Lock aspect ratio: ' + (propLockAr.checked ? 'on' : 'off'), 'edit');
+            pushUndo();
+            render();
+        });
+    }
+
+    // Preserve SVG Aspect Ratio checkbox
+    if (propPreserveSvgAr) {
+        propPreserveSvgAr.addEventListener('change', function() {
+            shapeSel().forEach(function(sid) {
+                var s = findShape(sid);
+                if (s && s.type === 'custom') {
+                    s.preserveSvgAspectRatio = propPreserveSvgAr.checked;
+                    s.lockAspectRatio = s.preserveSvgAspectRatio;
+                    if (s.preserveSvgAspectRatio) {
+                        // Adjust shape dimensions to match SVG's natural aspect ratio
+                        var inner = (s.customSvg || '').trim();
+                        if (inner) {
+                            var ext = computeSvgExtent(inner);
+                            if (ext.w > 0 && ext.h > 0) {
+                                var svgRatio = ext.w / ext.h;
+                                var area = s.width * s.height;
+                                s.height = Math.sqrt(area / svgRatio);
+                                s.width = s.height * svgRatio;
+                                if (s.width < CONFIG.minShapeSize) {
+                                    s.width = CONFIG.minShapeSize;
+                                    s.height = s.width / svgRatio;
+                                }
+                                if (s.height < CONFIG.minShapeSize) {
+                                    s.height = CONFIG.minShapeSize;
+                                    s.width = s.height * svgRatio;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            logAction('Preserve SVG aspect ratio: ' + (propPreserveSvgAr.checked ? 'on' : 'off'), 'edit');
+            pushUndo();
+            render();
+        });
+    }
 
     // Custom SVG code
     customSvgCode.addEventListener('input', function() {
@@ -2383,52 +2737,32 @@
             var s = findShape(sid);
             if (s && s.type === 'custom') {
                 s.customSvg = customSvgCode.value;
-                // Try to read viewBox from a pasted <svg> tag so customW/customH match
-                var m = customSvgCode.value.match(/<svg\b[^>]*>/i);
-                if (m) {
-                    var vb = m[0].match(/viewBox\s*=\s*["']([^"']*)["']/i);
-                    if (vb) {
-                        var parts = vb[1].split(/[\s,]+/);
-                        if (parts.length >= 4) {
-                            var pw = parseFloat(parts[2]), ph = parseFloat(parts[3]);
-                            if (pw > 0 && ph > 0) { s.customW = pw; s.customH = ph; }
+                // Auto-adjust dimensions when preserve SVG aspect ratio is on
+                if (s.preserveSvgAspectRatio) {
+                    var inner = (s.customSvg || '').trim();
+                    if (inner) {
+                        var ext = computeSvgExtent(inner);
+                        if (ext.w > 0 && ext.h > 0) {
+                            var svgRatio = ext.w / ext.h;
+                            var area = s.width * s.height;
+                            s.height = Math.sqrt(area / svgRatio);
+                            s.width = s.height * svgRatio;
+                            if (s.width < CONFIG.minShapeSize) {
+                                s.width = CONFIG.minShapeSize;
+                                s.height = s.width / svgRatio;
+                            }
+                            if (s.height < CONFIG.minShapeSize) {
+                                s.height = CONFIG.minShapeSize;
+                                s.width = s.height * svgRatio;
+                            }
                         }
                     }
-                }
-                // Fallback: for bare SVG elements (no outer <svg> tag), default to 100×100.
-                // Shapes typically use a 0-100 coord space; users can adjust via ViewBox fields.
-                if (!m) {
-                    if (!s.customW) s.customW = 100;
-                    if (!s.customH) s.customH = 100;
-                } else if (!s.customW || !s.customH) {
-                    if (!s.customW) s.customW = s.width;
-                    if (!s.customH) s.customH = s.height;
                 }
             }
         });
         render();
     });
-    customSvgCode.addEventListener('change', function() { scheduleSave(); });
-
-    // Custom viewBox width/height
-    customVbW.addEventListener('input', function() {
-        var v = parseInt(customVbW.value) || 0;
-        shapeSel().forEach(function(sid) {
-            var s = findShape(sid);
-            if (s && s.type === 'custom') { s.customW = v; }
-        });
-        render();
-    });
-    customVbW.addEventListener('change', function() { scheduleSave(); });
-    customVbH.addEventListener('input', function() {
-        var v = parseInt(customVbH.value) || 0;
-        shapeSel().forEach(function(sid) {
-            var s = findShape(sid);
-            if (s && s.type === 'custom') { s.customH = v; }
-        });
-        render();
-    });
-    customVbH.addEventListener('change', function() { scheduleSave(); });
+    customSvgCode.addEventListener('change', function() { pushUndo(); });
 
     // Shape name
     propNameInput.addEventListener('change', function() {
@@ -2438,7 +2772,7 @@
             if (s) s.name = propNameInput.value.trim() || oldName;
             if (s) logAction('Renamed '+oldName+' → '+s.name, 'edit');
         });
-        scheduleSave();
+        pushUndo();
         render();
     });
 
@@ -2450,7 +2784,7 @@
             if (s) s.zHeight = v;
         });
         logAction('Z-height → '+v, 'edit');
-        scheduleSave();
+        pushUndo();
         render();
     });
 
@@ -2463,7 +2797,7 @@
             if (s) {
                 s.hidden = !s.hidden;
                 logAction((s.hidden ? 'Hid' : 'Showed')+' '+s.name, 'edit');
-                scheduleSave();
+                pushUndo();
                 render();
             }
         }
@@ -2478,7 +2812,7 @@
                 // Also reflect in properties panel if this shape is selected
                 if (propZHeight) propZHeight.value = v;
                 logAction('Z-height → '+v+' ('+s.name+')', 'edit');
-                scheduleSave();
+                pushUndo();
                 render();
             }
         }
@@ -2502,18 +2836,67 @@
     });
 
     // ===== Props panel geometry/text =====
-    [propX, propY, propWidth, propHeight].forEach(function(input) {
-        input.addEventListener('change', function() {
-            var v = parseFloat(input.value);
-            var prop = input.id.replace('prop-', '');
-            shapeSel().forEach(function(sid) {
-                var s = findShape(sid);
-                if (s) s[prop] = v;
-            });
-            pushUndo();
-            logAction('Changed '+prop+' of '+shapeSel().map(shapeName).join(', '), 'edit');
-            render();
+    propX.addEventListener('change', function() {
+        var v = parseFloat(propX.value);
+        shapeSel().forEach(function(sid) {
+            var s = findShape(sid);
+            if (s) s.x = v;
         });
+        pushUndo();
+        logAction('Changed X of '+shapeSel().map(shapeName).join(', '), 'edit');
+        render();
+    });
+    propY.addEventListener('change', function() {
+        var v = parseFloat(propY.value);
+        shapeSel().forEach(function(sid) {
+            var s = findShape(sid);
+            if (s) s.y = v;
+        });
+        pushUndo();
+        logAction('Changed Y of '+shapeSel().map(shapeName).join(', '), 'edit');
+        render();
+    });
+    propWidth.addEventListener('change', function() {
+        var v = parseFloat(propWidth.value);
+        shapeSel().forEach(function(sid) {
+            var s = findShape(sid);
+            if (!s) return;
+            if (s.lockAspectRatio && s.height > 0 && s.width > 0) {
+                var ratio = s.width / s.height;
+                s.width = v;
+                s.height = s.width / ratio;
+                if (s.height < CONFIG.minShapeSize) {
+                    s.height = CONFIG.minShapeSize;
+                    s.width = s.height * ratio;
+                }
+            } else {
+                s.width = v;
+            }
+        });
+        pushUndo();
+        logAction('Changed width of '+shapeSel().map(shapeName).join(', '), 'edit');
+        render();
+    });
+    propHeight.addEventListener('change', function() {
+        var v = parseFloat(propHeight.value);
+        shapeSel().forEach(function(sid) {
+            var s = findShape(sid);
+            if (!s) return;
+            if (s.lockAspectRatio && s.width > 0 && s.height > 0) {
+                var ratio = s.width / s.height;
+                s.height = v;
+                s.width = s.height * ratio;
+                if (s.width < CONFIG.minShapeSize) {
+                    s.width = CONFIG.minShapeSize;
+                    s.height = s.width / ratio;
+                }
+            } else {
+                s.height = v;
+            }
+        });
+        pushUndo();
+        logAction('Changed height of '+shapeSel().map(shapeName).join(', '), 'edit');
+        render();
     });
     propText.addEventListener('change', function() {
         shapeSel().forEach(function(sid) {
@@ -2535,7 +2918,7 @@
     });
     connColor.addEventListener('change', function() {
         logAction('Conn color → '+connColor.value, 'edit');
-        scheduleSave();
+        pushUndo();
     });
     connWidth.addEventListener('input', function() {
         var v = parseInt(connWidth.value) || 1;
@@ -2547,7 +2930,7 @@
     });
     connWidth.addEventListener('change', function() {
         logAction('Conn width → '+connWidth.value, 'edit');
-        scheduleSave();
+        pushUndo();
     });
     connArrowStart.addEventListener('change', function() {
         connSel().forEach(function(cid) {
@@ -2555,7 +2938,7 @@
             if (c) c.arrowStart = connArrowStart.checked;
         });
         logAction('Arrow start: '+connArrowStart.checked, 'edit');
-        scheduleSave();
+        pushUndo();
         render();
     });
     connArrowEnd.addEventListener('change', function() {
@@ -2564,7 +2947,7 @@
             if (c) c.arrowEnd = connArrowEnd.checked;
         });
         logAction('Arrow end: '+connArrowEnd.checked, 'edit');
-        scheduleSave();
+        pushUndo();
         render();
     });
 
@@ -2576,7 +2959,7 @@
             if (c) c.name = connNameInput.value.trim() || oldName;
             if (c) logAction('Renamed '+oldName+' → '+c.name, 'edit');
         });
-        scheduleSave();
+        pushUndo();
         render();
     });
 
@@ -2586,19 +2969,19 @@
     canvasWidth.addEventListener('change', function() {
         var v = clamp(parseInt(canvasWidth.value) || 3000, 500, CONFIG.maxCanvasW);
         S.canvasW = v; canvasWidth.value = v;
-        scheduleSave(); renderGrid();
+        pushUndo(); renderGrid();
     });
     canvasHeight.addEventListener('change', function() {
         var v = clamp(parseInt(canvasHeight.value) || 2000, 500, CONFIG.maxCanvasH);
         S.canvasH = v; canvasHeight.value = v;
-        scheduleSave(); renderGrid();
+        pushUndo(); renderGrid();
     });
 
     // Project name
     projectNameInput.addEventListener('change', function() {
         S.projectName = projectNameInput.value.trim() || 'Untitled';
         projectNameInput.value = S.projectName;
-        scheduleSave();
+        pushUndo();
     });
 
     // Export dropdown
@@ -2714,6 +3097,14 @@
                 try {
                     var d = JSON.parse(e.target.result);
                     S.shapes = d.shapes || [];
+                    // Backfill new properties for shapes loaded from old files
+                    S.shapes.forEach(function(s) {
+                        if (!s || typeof s !== 'object') return;
+                        if (s.lockAspectRatio === undefined) s.lockAspectRatio = false;
+                        if (s.type === 'custom' && s.preserveSvgAspectRatio === undefined) {
+                            s.preserveSvgAspectRatio = false;
+                        }
+                    });
                     S.connections = d.connections || [];
                     S.nameCounters = d.nameCounters || {};
                     S.connNameCounter = d.connNameCounter || 0;
@@ -2760,7 +3151,7 @@
                     case 'copy':         copySelection(); break;
                     case 'paste':         pasteClipboard(); break;
                     case 'duplicate':    sIds.forEach(function(id) { dup(id); }); break;
-                    case 'delete':       sIds.forEach(function(id) { deleteShape(id); }); break;
+                    case 'delete':       S._batchUndo = true; sIds.forEach(function(id) { deleteShape(id); }); break;
                     case 'bring-front':   sIds.forEach(function(id) { toFront(id); }); break;
                     case 'bring-forward': sIds.forEach(function(id) { forward(id); }); break;
                     case 'send-backward': sIds.forEach(function(id) { backward(id); }); break;
@@ -2776,8 +3167,9 @@
                         break;
                 }
             } else if (cIds.length > 0) {
-                if (act === 'delete') { cIds.forEach(function(id) { deleteConn(id); }); }
+                if (act === 'delete') { S._batchUndo = true; cIds.forEach(function(id) { deleteConn(id); }); }
             }
+            S._batchUndo = false;
             contextMenu.classList.add('hidden');
             pushUndo();
             render();
@@ -2789,13 +3181,16 @@
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         // Read-only mode: block all mutations (Esc and zoom still work)
         var isMutationKey = (e.key === 'Delete' || e.key === 'Backspace' ||
-            (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'y' || e.key === 'c' || e.key === 'v' || e.key === 'd' || e.key === ']' || e.key === '['));
+            (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'y' || e.key === 'c' || e.key === 'v' || e.key === 'd' || e.key === ']' || e.key === '[') ||
+            (ARROW_DELTA[e.key] && shapeSel().length));
         if (S.readOnly && isMutationKey) return;
 
         if (e.key === 'Delete' || e.key === 'Backspace') {
+            S._batchUndo = true;
             shapeSel().forEach(function(id) { deleteShape(id); });
             connSel().forEach(function(id) { deleteConn(id); });
             S.selection = [];
+            S._batchUndo = false;
             pushUndo();
             render();
             e.preventDefault();
@@ -2803,20 +3198,25 @@
         if (e.key === 'Escape') {
             deselectAll();
             S.tool = 'select';
+            setHoveredConn(null);
             S.drawStartShapeId = null;
             pendingShape = null;
             clearToolActive();
             document.querySelector('[data-tool="select"]').classList.add('active');
             updateCursor();
+            updateToolBodyClass();
         }
 
         var keys = { v:'select', l:'line', t:'text' };
         if (keys[e.key] && !e.ctrlKey && !e.metaKey) {
             S.tool = keys[e.key];
+            setHoveredConn(null);
             pendingShape = null;
+            deselectAll();
             clearToolActive();
             document.querySelector('[data-tool="'+keys[e.key]+'"]').classList.add('active');
             updateCursor();
+            updateToolBodyClass();
             return;
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
@@ -2832,6 +3232,37 @@
         if (e.key === '-') { S.zoom = clamp(S.zoom - CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom); logAction('Zoom: '+Math.round(S.zoom*100)+'%', 'sys'); applyTransform(); }
         if (e.key === 'Enter' && shapeSel().length === 1 && !textEditor.classList.contains('visible')) startTextEdit(shapeSel()[0]);
         if ((e.ctrlKey || e.metaKey) && e.key === '\\') { e.preventDefault(); togglePanel(); }
+        // ===== Arrow-key shape movement =====
+        if (ARROW_DELTA[e.key] && shapeSel().length && !textEditor.classList.contains('visible')) {
+            e.preventDefault();
+            var d = ARROW_DELTA[e.key];
+            var step = e.shiftKey
+                ? (S.snapToGrid ? S.gridSize : CONFIG.arrowStepBig)
+                : CONFIG.arrowStep;
+            var moved = false;
+            shapeSel().forEach(function(id) {
+                var s = findShape(id);
+                if (!s || s.locked) return;
+                if (S.snapToGrid && e.shiftKey) {
+                    s.x = snap(s.x + d.dx * step);
+                    s.y = snap(s.y + d.dy * step);
+                } else {
+                    s.x += d.dx * step;
+                    s.y += d.dy * step;
+                }
+                clampShape(s);
+                moved = true;
+            });
+            if (moved) {
+                render();
+                scheduleArrowUndo();
+            }
+        }
+    });
+
+    // ===== Arrow-key move: commit undo on keyup =====
+    document.addEventListener('keyup', function(e) {
+        if (ARROW_DELTA[e.key]) commitArrowMove();
     });
 
     // ===== Init =====
@@ -2932,6 +3363,10 @@
                 S.shapes.forEach(function(s) {
                     if (!s || typeof s !== 'object') return;
                     if (!s.textAlign) s.textAlign = 'center';
+                    if (s.lockAspectRatio === undefined) s.lockAspectRatio = false;
+                    if (s.type === 'custom' && s.preserveSvgAspectRatio === undefined) {
+                        s.preserveSvgAspectRatio = false;
+                    }
                     if (!s.name) {
                         var t = s.type || 'shape';
                         if (!S.nameCounters[t]) S.nameCounters[t] = 0;
@@ -2990,7 +3425,7 @@
         propFontSize.value = CONFIG.defaultFontSize;
         connColor.value = '#94A3B8'; connWidth.value = '2'; connArrowStart.checked = false; connArrowEnd.checked = true;
 
-        renderGrid(); applyTransform(); updateCursor(); render();
+        renderGrid(); applyTransform(); updateCursor(); updateToolBodyClass(); render();
         canvasWidth.value = S.canvasW; canvasHeight.value = S.canvasH;
         // Only reset viewport if no saved state was found (demo data first launch)
         if (!saved) {

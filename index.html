@@ -19,7 +19,7 @@
     <a href="#canvas-container" class="skip-link">Skip to canvas</a>
     <!-- Toolbar -->
     <div id="toolbar">
-        <a class="app-logo" href="about.html">
+        <a class="app-logo" href="about/">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4"/></svg>
             diagram
         </a>
@@ -49,7 +49,7 @@
 
         <button class="tool-btn active" data-tool="select" title="Select (V)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg></button>
         <button class="tool-btn" data-tool="line" title="Line (L)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="20" x2="20" y2="4"/></svg></button>
-        <button class="tool-btn" data-tool="text" title="Text (T)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M14 4v16M4 4h16"/></svg></button>
+        <button class="tool-btn" data-tool="text" title="Text (T)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M12 5v14M8 18h8"/></svg></button>
         <div class="toolbar-divider"></div>
 
         <button class="shape-btn" data-shape="rect" data-width="120" data-height="80" title="Rectangle"><svg viewBox="0 0 60 40"><rect x="5" y="5" width="50" height="30" fill="none" stroke="currentColor" stroke-width="2" rx="2"/></svg></button>
@@ -128,16 +128,25 @@
         <!-- Shape geometry -->
         <div class="panel-section panel-shape">
             <h4>Geometry</h4>
-            <div class="prop-row"><label>X <input type="number" id="prop-x"></label><label>Y <input type="number" id="prop-y"></label></div>
-            <div class="prop-row"><label>W <input type="number" id="prop-width" min="10"></label><label>H <input type="number" id="prop-height" min="10"></label></div>
-            <div class="prop-row"><label>Z <input type="number" id="prop-zHeight" value="0" min="-999" max="999" title="Z-order position (higher = on top)"></label></div>
+            <div class="prop-row">
+                <label>X <input type="number" id="prop-x" class="num-compact"></label>
+                <label>Y <input type="number" id="prop-y" class="num-compact"></label>
+                <label>W <input type="number" id="prop-width" class="num-compact" min="10"></label>
+                <label>H <input type="number" id="prop-height" class="num-compact" min="10"></label>
+            </div>
+            <div class="prop-row"><label>Z <input type="number" id="prop-zHeight" class="num-tiny" value="0" min="-999" max="999" title="Z-order position (higher = on top)"></label></div>
+            <div class="prop-row">
+                <label class="checkbox-label"><input type="checkbox" id="prop-lock-ar"> Lock Aspect Ratio</label>
+            </div>
         </div>
         <!-- Shape text -->
         <div class="panel-section panel-shape">
             <h4>Text</h4>
             <div class="prop-row"><label><textarea id="prop-text" rows="3" placeholder="Enter text..."></textarea></label></div>
-            <div class="prop-row"><label>Font Size <input type="number" id="prop-fontSize" min="8" max="72"></label></div>
-            <div class="prop-row"><label>Padding <input type="number" id="prop-textPad" min="0" max="40"></label></div>
+            <div class="prop-row">
+                <label>Font <input type="number" id="prop-fontSize" class="num-tiny" min="8" max="72"></label>
+                <label>Pad <input type="number" id="prop-textPad" class="num-tiny" min="0" max="40"></label>
+            </div>
             <div class="prop-row"><label>Align <select id="prop-textAlign">
                 <option value="top-left">Top Left</option>
                 <option value="top-center">Top Center</option>
@@ -153,19 +162,30 @@
         <!-- Shape style -->
         <div class="panel-section panel-shape panel-shape-style">
             <h4>Style</h4>
-            <div class="prop-row"><label>Fill <input type="color" id="prop-fill"></label><label>Outline <input type="color" id="prop-stroke"></label></div>
-            <div class="prop-row"><label>Outline W <input type="number" id="prop-sw" min="0" max="20"></label><label>Opacity <input type="number" id="prop-opacity" min="10" max="100"></label></div>
-            <div class="prop-row"><label>Fill Op <input type="number" id="prop-fillOpacity" min="0" max="100" value="100" title="Fill opacity (0-100)"></label><label>Stroke Op <input type="number" id="prop-strokeOpacity" min="0" max="100" value="100" title="Stroke opacity (0-100)"></label></div>
-            <div class="prop-row"><label>Text Color <input type="color" id="prop-textColor"></label></div>
+            <div class="prop-row">
+                <label>Fill <input type="color" id="prop-fill"></label>
+                <label>Stroke <input type="color" id="prop-stroke"></label>
+                <label>SW <input type="number" id="prop-sw" class="num-tiny" min="0" max="20"></label>
+                <label>Op <input type="number" id="prop-opacity" class="num-compact" min="10" max="100"></label>
+            </div>
+            <div class="prop-row">
+                <label>F.Op <input type="number" id="prop-fillOpacity" class="num-compact" min="0" max="100" value="100" title="Fill opacity (0-100)"></label>
+                <label>S.Op <input type="number" id="prop-strokeOpacity" class="num-compact" min="0" max="100" value="100" title="Stroke opacity (0-100)"></label>
+                <label>Txt Color <input type="color" id="prop-textColor"></label>
+            </div>
         </div>
 
         <!-- Connection style -->
         <div class="panel-section panel-conn">
             <h4>Connection</h4>
             <div class="prop-row"><label>Name <input type="text" id="conn-name" placeholder="Line name..."></label></div>
-            <div class="prop-row"><label>Color <input type="color" id="conn-color"></label><label>Width <input type="number" id="conn-width" min="1" max="20"></label></div>
-            <div class="prop-row"><label class="checkbox-label"><input type="checkbox" id="conn-arrow-start"> Start Arrow</label></div>
-            <div class="prop-row"><label class="checkbox-label"><input type="checkbox" id="conn-arrow-end"> End Arrow</label></div>
+            <div class="prop-row"><label>Color <input type="color" id="conn-color"></label><label>Width <input type="number" id="conn-width" class="num-compact" min="1" max="20"></label></div>
+            <div class="prop-row">
+                <div class="checkbox-pair">
+                    <label class="checkbox-label"><input type="checkbox" id="conn-arrow-start"> Start</label>
+                    <label class="checkbox-label"><input type="checkbox" id="conn-arrow-end"> End</label>
+                </div>
+            </div>
         </div>
 
         <!-- Layers tab content -->
@@ -174,9 +194,10 @@
         <!-- Custom SVG editing (shown when custom shape selected) -->
         <div class="panel-section panel-custom">
             <h4>Custom SVG</h4>
-            <div class="prop-row"><label>ViewBox W <input type="number" id="custom-viewbox-w" min="1" step="1" placeholder="e.g. 100"></label></div>
-            <div class="prop-row"><label>ViewBox H <input type="number" id="custom-viewbox-h" min="1" step="1" placeholder="e.g. 100"></label></div>
-            <div class="prop-row"><label><textarea id="custom-svg-code" rows="6" placeholder="Paste SVG elements..."></textarea></label></div>
+            <div class="prop-row"><label><textarea id="custom-svg-code" rows="6" placeholder="Paste SVG elements — use pixel coords matching shape size"></textarea></label></div>
+            <div class="prop-row">
+                <label class="checkbox-label"><input type="checkbox" id="prop-preserve-svg-ar"> Preserve SVG Aspect Ratio</label>
+            </div>
         </div>
 
         </div><!-- end panel-scroll -->

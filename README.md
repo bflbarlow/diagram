@@ -1,4 +1,4 @@
-# Diagram — v1.1.3
+# Diagram — v1.1.4
 
 Part of the [Free Open Tools](https://freeopentools.com/) ecosystem — a suite of browser-based utilities.
 
@@ -29,7 +29,7 @@ No server or build step required — just open the file in a browser:
 open index.html
 ```
 
-Or visit the [About page](about.html) for documentation and launch links.
+Or visit the [About page](about/) for documentation and launch links.
 
 ## Usage
 
@@ -108,6 +108,8 @@ Create custom shapes by pasting SVG code:
 | `Enter` | Edit text of selected shape |
 | `Escape` | Deselect / cancel |
 | `+` / `-` | Zoom in / out |
+| Arrow keys | Move selected shape(s) by 1px |
+| Shift+Arrow | Move selected shape(s) by grid size |
 | Right-click drag | Pan |
 
 ## File Structure
@@ -115,13 +117,26 @@ Create custom shapes by pasting SVG code:
 ```
 diagram/
 ├── index.html                 # Main application HTML
-├── about.html                 # About page with documentation
+├── about/
+│   └── index.html            # About page with documentation (served at /about/)
 ├── styles.css                 # All styles (ecosystem dark/light theme)
 ├── app.js                     # Application logic (state, rendering, events)
 ├── STYLE_GUIDE.md             # Project style guide (v1.1)
 ├── STYLE_GUIDE_RECONCILIATION.md  # Compliance reconciliation (all items resolved)
 ├── REVIEW.md                  # Technical review and maintenance plan
 ├── README.md                  # This file
+├── documents/
+│   ├── ASPECT_RATIO.md        # Lock Aspect Ratio & Preserve SVG Aspect Ratio spec
+│   ├── ARROW_MOVE.md          # Arrow-key shape movement implementation plan
+│   ├── HOVER.md               # Connection hover highlight specification
+│   ├── NEW_LINE_SNAP.md       # New-line-drawing port snapping specification
+│   ├── PROPS_PANE_REVIEW.md   # Properties panel review
+│   ├── RIGHT_CLICK_PAN.md     # Right-click deferred pan specification
+│   ├── SVG_SIZING.md          # Custom SVG edge-to-edge fill specification
+│   ├── TECH_REVIEW.md         # Technical review and maintenance plan
+│   ├── UNDO_INVESTIGATION.md  # Undo/redo investigation
+│   ├── UNINVESTIGATED_BUGS.md # Suspected bugs log
+│   └── VERSION_UPDATE_PROCESS.md  # Version update process
 ├── vendor/                    # Vendored dependencies
 │   ├── html2canvas.min.js
 │   └── jspdf.umd.min.js
@@ -129,7 +144,7 @@ diagram/
 
 ## Technical Details
 
-- **Version**: 1.1.3
+- **Version**: 1.1.4
 - **Framework**: Vanilla JavaScript (ES5-compatible), no dependencies
 - **Rendering**: DOM-based shapes with inline SVG; connections rendered as SVG paths
 - **Custom SVG**: Supports pasting SVG code with auto-detected viewBox or manual viewBox controls
@@ -145,7 +160,15 @@ diagram/
 
 ## Version History
 
-### v1.1.3 (2026-09-08)
+### v1.1.4 (Sep 11, 2026)
+- Fixed undo on shape click — clicking a shape no longer creates spurious undo entries; only actual moves/resizes are recorded
+- **Arrow-key shape movement**: Arrow keys nudge selected shape(s) by 1px; Shift+Arrow moves by grid size. Connections follow automatically. Undo batches per gesture (one undo entry per contiguous key hold).
+- **New-line-drawing port snapping**: Drawing a new line now shows the same port-dot + outline-highlight preview as existing line-end drag — 8-port snap detection with nearest-port indicator dots and shape highlight ring.
+- **Fixed new-line preview jitter**: The line-drawing preview's fixed start point is now pinned at click time and never re-projected during the drag (mirrors drag-end behavior). This eliminates the clunky sliding/jitter that made new-line-drawing feel less polished than existing line-end drag.
+- **Lock Aspect Ratio**: Added "Lock Aspect Ratio" checkbox to properties panel for all shapes. When checked, resize handles and W/H inputs keep the shape's width-to-height ratio constant. Works for all shape types (rect, circle, diamond, triangle, terminator, custom SVG).
+- **Preserve SVG Aspect Ratio**: Added "Preserve SVG Aspect Ratio" checkbox to the Custom SVG properties panel. When checked, shape dimensions lock to the SVG content's natural aspect ratio (computed via `computeSvgExtent()` or viewBox), and rendered SVG uses `preserveAspectRatio="xMidYMid meet"` instead of `"none"` to eliminate distortion. Automatically couples with Lock Aspect Ratio.
+
+### v1.1.3 (Sep 8, 2026)
 - **Right-click deferred pan**: Pan canvas by right-click and drag; context menu appears immediately on right-click and hides when pan starts
 - **Refactored context menu**: Extracted hit-testing logic into shared `showContextMenuAt(x, y)` function for reuse
 - **Keyboard context menu**: Added Shift+F10 / Menu key support for context menu

@@ -2,11 +2,20 @@
 /* Ecosystem-standard palette (Free Open Tools Style Guide §2) */
 :root {
     --color-accent:        #2563EB;
+    --color-accent-rgb:    37, 99, 235;
     --color-accent-hover:  #1D4ED8;
     --color-accent-soft:   #2563EB1A;
     --color-success:       #16A34A;
     --color-warning:       #D97706;
     --color-danger:        #DC2626;
+
+    /* ===== Hover Effect Configuration ===== */
+    --hover-intensity:       0.25;
+    --hover-ring-width:      calc(1px + 1px * var(--hover-intensity));
+    --hover-glow-blur:      calc(4px + 12px * var(--hover-intensity));
+    --hover-glow-alpha:     calc(0.15 + 0.35 * var(--hover-intensity));
+    --hover-conn-width-add: calc(1px + 2px * var(--hover-intensity));
+    --hover-transition:     0.12s;
 
     --space-1: 4px;
     --space-2: 8px;
@@ -379,11 +388,24 @@ html, body {
     cursor: move;
     user-select: none;
     min-width: 20px; min-height: 20px;
+    transition: box-shadow var(--hover-transition), filter var(--hover-transition);
 }
 
-.diagram-shape:hover { filter: brightness(1.05); }
+/* Hover effect: ring + glow, active in select and line tools, excluding locked shapes */
+body.tool-select .diagram-shape:not(.locked):hover,
+body.tool-line .diagram-shape:not(.locked):hover {
+    box-shadow:
+        0 0 0 var(--hover-ring-width) rgba(var(--color-accent-rgb), 0.8),
+        0 0 var(--hover-glow-blur) rgba(var(--color-accent-rgb), var(--hover-glow-alpha));
+}
+
 .diagram-shape.selected { box-shadow: 0 0 0 2px var(--color-accent), 0 0 12px var(--color-accent-soft); }
 .diagram-shape.locked { cursor: not-allowed; opacity: 0.7; }
+
+/* Connection hover state (toggled by JS — CSS :hover won't fire due to pointer-events:none) */
+.conn-hover {
+    filter: brightness(1.08);
+}
 
 /* Resize handles */
 .resize-handle {
@@ -616,6 +638,8 @@ html, body {
     flex: 1;
     font-size: 12px;
     color: var(--color-text-muted);
+    white-space: nowrap;
+    min-width: 0;
 }
 .prop-row label input,
 .prop-row label select,
@@ -630,6 +654,20 @@ html, body {
     min-height: 44px;
     outline: none;
     font-family: inherit;
+}
+/* Compact number inputs — stretch to fill but won't collapse below min */
+.prop-row .num-compact {
+    flex: 1;
+    min-width: 50px;
+}
+.prop-row .num-tiny {
+    flex: 1;
+    min-width: 45px;
+}
+/* Number inputs get a shorter height to reduce vertical bloat */
+.prop-row label input[type="number"] {
+    min-height: 28px;
+    font-size: 14px;
 }
 .prop-row label input[type="color"] {
     flex: 0;
@@ -646,6 +684,8 @@ html, body {
 }
 .prop-row label select {
     cursor: pointer;
+    flex: 1;
+    min-width: 0;
 }
 .prop-row label input[type="number"]:focus,
 .prop-row label select:focus,
@@ -678,16 +718,57 @@ html, body {
 
 /* Checkbox label */
 .prop-row .checkbox-label {
-    display: flex !important;
+    display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 6px;
+    cursor: pointer;
+    color: var(--color-text);
+    font-size: 12px;
+}
+.prop-row .checkbox-label input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    min-height: 18px;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    background: var(--color-surface);
+    accent-color: var(--color-accent);
+    cursor: pointer;
+    position: relative;
+}
+.prop-row .checkbox-label input[type="checkbox"]:checked {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+}
+.prop-row .checkbox-label input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+/* Checkbox pair — two checkboxes sharing a row, each stretching evenly */
+.prop-row .checkbox-pair {
+    display: flex;
+    gap: var(--space-3);
+    flex: 1;
+}
+.prop-row .checkbox-pair .checkbox-label {
+    flex: 1;
+    min-width: 60px;
+    white-space: nowrap;
     cursor: pointer;
     color: var(--color-text) !important;
     font-size: 12px !important;
-}
-.prop-row .checkbox-label input[type="checkbox"] {
-    width: auto;
-    accent-color: var(--color-accent);
 }
 
 /* Show/hide panel sections */
