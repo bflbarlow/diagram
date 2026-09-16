@@ -384,7 +384,7 @@
             <div class="header-row">
                 <a href="/" class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4"/></svg> <span>diagram</span></a>
             </div>
-            <h1>diagram <span class="version" id="version-display">v1.1.4</span></h1>
+            <h1>diagram <span class="version" id="version-display">v1.1.5</span></h1>
             <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
         </header>
 
@@ -437,7 +437,82 @@
                 <strong>Tip:</strong> If your SVG doesn't have a wrapping <code>&lt;svg&gt;</code> tag, the app defaults to a 100x100 coordinate space. Use the ViewBox fields to adjust if needed.
             </div>
         </section>
+        <section>
+            <h2>Native Custom SVGs</h2>
+            <p>A custom SVG can be treated as a native shape (rect, circle, diamond, etc.) by checking <strong>Treat as native shape</strong> in the properties panel. This gives it the same fill color, stroke color, stroke width, and opacity controls as built-in shapes. To work correctly, the SVG must conform to the following rules.</p>
 
+            <h3>Required Structure</h3>
+            <p>The outer <code>&lt;svg&gt;</code> tag <strong>must</strong> include a <code>viewBox</code> attribute. This is the authoritative source of the shape's coordinate space and has no reliable automatic fallback.</p>
+
+            <pre>&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 WIDTH HEIGHT"&gt;
+  &lt;!-- inner content --&gt;
+&lt;/svg&gt;</pre>
+
+            <div class="warning">
+                <strong>Important:</strong> The app's fallback extent scanner cannot reliably parse arc commands or flag-packed shorthand notation in <code>&lt;path d="..."&gt;</code>. Always declare an explicit <code>viewBox</code>.
+            </div>
+
+            <h3>Content Rules</h3>
+            <ol>
+                <li><strong>No fill or stroke on content elements.</strong> Elements that should receive the user's selected fill and stroke must not declare <code>fill</code>, <code>stroke</code>, <code>fill-opacity</code>, or <code>stroke-opacity</code> themselves. The app injects these values automatically.</li>
+                <li><strong>Author overrides are preserved.</strong> If an element declares its own <code>fill</code> or <code>stroke</code>, that specific attribute is left untouched. The rest of the element (and all other elements) still receive the injected values. Use this for fixed details like divider lines or inner rings that should keep a specific color regardless of the user's panel settings.</li>
+                <li><strong>Content must fit within viewBox bounds.</strong> Elements extending beyond the viewBox are clipped by <code>overflow="hidden"</code> on the wrapper.</li>
+                <li><strong>No nested <code>&lt;svg&gt;</code> tags.</strong> Use <code>&lt;g&gt;</code> for grouping instead.</li>
+                <li><strong>No <code>&lt;text&gt;</code> elements.</strong> Text labels are handled separately by the app's built-in text control.</li>
+                <li><strong><code>&lt;use&gt;</code> is not supported.</strong> There is no <code>&lt;defs&gt;</code> mechanism in the current content model; including <code>&lt;use&gt;</code> produces undefined rendering.</li>
+            </ol>
+
+            <h3>Supported Elements</h3>
+            <table>
+                <thead><tr><th>Element</th><th>Notes</th></tr></thead>
+                <tbody>
+                    <tr><td><code>&lt;rect&gt;</code></td><td><code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>, <code>rx</code>, <code>ry</code></td></tr>
+                    <tr><td><code>&lt;circle&gt;</code></td><td><code>cx</code>, <code>cy</code>, <code>r</code></td></tr>
+                    <tr><td><code>&lt;ellipse&gt;</code></td><td><code>cx</code>, <code>cy</code>, <code>rx</code>, <code>ry</code></td></tr>
+                    <tr><td><code>&lt;polygon&gt;</code></td><td><code>points</code></td></tr>
+                    <tr><td><code>&lt;polyline&gt;</code></td><td><code>points</code></td></tr>
+                    <tr><td><code>&lt;path&gt;</code></td><td><code>d</code>, <code>stroke-linecap</code>, <code>stroke-linejoin</code>, <code>stroke-dasharray</code></td></tr>
+                    <tr><td><code>&lt;line&gt;</code></td><td><code>x1</code>, <code>y1</code>, <code>x2</code>, <code>y2</code></td></tr>
+                    <tr><td><code>&lt;g&gt;</code></td><td><code>transform</code> for grouping; injection targets individual drawable children, not the wrapper</td></tr>
+                </tbody>
+            </table>
+
+            <p>Self-closing tags (<code>&lt;circle cx="50" cy="50" r="40"/&gt;</code>) are handled correctly.</p>
+
+            <h3>Stroke Notes</h3>
+            <p><strong>Open paths and lines.</strong> Unlike closed shapes (rectangles, circles, polygons), open paths and lines have no "inset stroke" — the stroke expands equally on both sides of the centerline. If a line sits at the edge of the viewBox, its stroke may be clipped by <code>overflow="hidden"</code>. Manually inset detail lines by at least half the expected stroke width from all edges.</p>
+
+            <p><strong>Non-uniform scale.</strong> When <strong>Preserve SVG Aspect Ratio</strong> is unchecked, the SVG is stretched non-uniformly to fill the shape's width and height. This causes stroke width to appear thicker on the compressed axis and thinner on the stretched axis. Enable <strong>Preserve SVG Aspect Ratio</strong> for visually consistent stroke rendering.</p>
+
+            <h3>Example: Star</h3>
+            <pre>&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"&gt;
+  &lt;polygon points="50,5 61,35 95,35 68,57 79,91 50,70 21,91 32,57 5,35 39,35"/&gt;
+&lt;/svg&gt;</pre>
+            <p>A single polygon with no fill or stroke. The app injects the user's panel values. The star fills and strokes along its own outline — no bounding-box rectangle appears behind it.</p>
+
+            <h3>Example: Gear with Fixed Detail</h3>
+            <pre>&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"&gt;
+  &lt;g&gt;
+    &lt;!-- Outer Gear Body (8 Teeth Path) --&gt;
+    &lt;path d="M 45,10 L 55,10 L 57,20 A 30,30 0 0,1 68,25 L 77,18 L 84,25 L 77,34 A 30,30 0 0,1 82,45 L 90,47 L 90,57 L 80,59 A 30,30 0 0,1 75,70 L 82,79 L 75,86 L 66,79 A 30,30 0 0,1 55,84 L 53,90 L 43,90 L 41,80 A 30,30 0 0,1 30,75 L 21,82 L 14,75 L 21,66 A 30,30 0 0,1 16,55 L 10,53 L 10,43 L 20,41 A 30,30 0 0,1 25,30 L 18,21 L 25,14 L 34,21 A 30,30 0 0,1 45,16 Z"/&gt;
+    &lt;!-- Fixed inner ring detail (Overrides panel fill/stroke) --&gt;
+    &lt;circle cx="50" cy="50" r="15" fill="none" stroke="#666" stroke-width="3"/&gt;
+  &lt;/g&gt;
+&lt;/svg&gt;</pre>
+            <p>The gear body <code>&lt;path&gt;</code> has no fill/stroke and receives the user's panel values — the gear fills along its actual toothed outline, not a bounding-box rectangle. The inner ring declares its own <code>fill="none"</code> and <code>stroke="#666"</code>, so that element keeps its fixed appearance regardless of the user's selected fill and stroke colors.</p>
+
+            <h3>Example: Database Cylinder</h3>
+            <pre>&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"&gt;
+  &lt;g&gt;
+    &lt;!-- Main Cylinder Body (Receives panel fill &amp; stroke colors) --&gt;
+    &lt;path d="M 15,25 A 35,15 0 0,0 85,25 L 85,75 A 35,15 0 0,1 15,75 Z M 15,25 A 35,15 0 0,1 85,25 A 35,15 0 0,1 15,25"/&gt;
+    &lt;!-- Internal Fixed Disk Dividers (Preserves gray stroke and no fill) --&gt;
+    &lt;path d="M 15,42 A 35,15 0 0,0 85,42" fill="none" stroke="#666" stroke-width="2"/&gt;
+    &lt;path d="M 15,58 A 35,15 0 0,0 85,58" fill="none" stroke="#666" stroke-width="2"/&gt;
+  &lt;/g&gt;
+&lt;/svg&gt;</pre>
+            <p>The cylinder body <code>&lt;path&gt;</code> has no fill/stroke and receives the user's panel fill and stroke — the full cylinder paints with the selected colors. The two internal divider arcs declare <code>fill="none"</code> and their own <code>stroke="#666"</code>, keeping them fixed regardless of the user's panel settings, just like real database diagram notation.</p>
+        </section>
         <section>
             <h2>Keyboard Shortcuts</h2>
             <div class="shortcuts-grid">
@@ -473,44 +548,55 @@
             <h2>Version History</h2>
             <div class="changelog">
                 <div class="changelog-entry">
+                    <span class="ver">1.1.5</span><span class="date">Sep 12, 2026</span>
+                    <ul>
+                        <li>Treat as native shape — checkbox enables fill/stroke/opacity controls from properties panel</li>
+                        <li>Pan clamped to canvas bounds — edges always reachable; wheel/trackpad uses deferred clamping</li>
+                        <li>Triangle connection snap fixed — endpoints snap to true slanted edge, not bounding box bottom</li>
+                        <li>roundRect/terminator connection snap added — computes true distance to rounded visual outline</li>
+                        <li>Named ports project to true outline — connections land on actual visual edge for all shapes</li>
+                        <li>New-line preview no longer clips — dotted outline visible outside canvas container viewport</li>
+                    </ul>
+                </div>
+                <div class="changelog-entry">
                     <span class="ver">1.1.4</span><span class="date">Sep 11, 2026</span>
                     <ul>
-                        <li>Fixed undo on shape click — clicking a shape no longer creates spurious undo entries</li>
-                        <li>Arrow-key shape movement — Arrow keys nudge shapes by 1px; Shift+Arrow moves by grid size. Connections follow.</li>
-                        <li>New-line-drawing port snapping — New lines show the same port-dot + outline-highlight preview as existing line-end drag (8-port snap detection).</li>
-                        <li>Fixed new-line preview jitter — Preview's start point is now pinned at click time, eliminating sliding/jitter during drag.</li>
-                        <li>Lock Aspect Ratio — checkbox in properties panel keeps width-to-height ratio constant during resize.</li>
-                        <li>Preserve SVG Aspect Ratio — checkbox on custom SVGs locks dimensions to the SVG's natural aspect ratio.</li>
+                        <li>Fixed undo on shape click — no spurious undo entries</li>
+                        <li>Arrow keys nudge shapes (1px; Shift+grid size), connections follow</li>
+                        <li>New-line port snapping with preview dots and outline highlight</li>
+                        <li>Fixed new-line preview jitter — start point pinned at click</li>
+                        <li>Lock Aspect Ratio — checkbox keeps width-to-height ratio during resize</li>
+                        <li>Preserve SVG Aspect Ratio — checkbox locks SVG to its natural ratio</li>
                     </ul>
                 </div>
                 <div class="changelog-entry">
                     <span class="ver">1.1.3</span><span class="date">Sep 8, 2026</span>
                     <ul>
-                        <li>Right-click deferred pan — pan canvas by right-click and drag; context menu appears on click and hides when pan starts</li>
-                        <li>Refactored context menu — extracted hit-testing into shared showContextMenuAt(x, y) function</li>
-                        <li>Keyboard context menu — added Shift+F10 / Menu key support</li>
+                        <li>Right-click drag to pan canvas; context menu hides on pan start</li>
+                        <li>Refactored context menu hit-testing into shared function</li>
+                        <li>Added Shift+F10 / Menu key support for context menu</li>
                     </ul>
                 </div>
                 <div class="changelog-entry">
                     <span class="ver">1.1.2</span><span class="date">Sep 7, 2026</span>
                     <ul>
-                        <li>Priority attachment ports — 8 snap points (corners + edge midpoints) with visual indicators when dragging connection endpoints</li>
-                        <li>Connection body click — click a connection line even when it overlaps a shape</li>
-                        <li>Fill opacity and stroke opacity — independent opacity controls per shape</li>
-                        <li>Touch long-press right-click — 500ms hold triggers context menu on touch</li>
-                        <li>New Canvas button — circle-plus icon with confirmation before clearing</li>
-                        <li>Rounded rect fill fix — fill rect now uses rx="8" to match stroke radius</li>
-                        <li>Z-height awareness — connection snapping respects shape layering</li>
+                        <li>8 priority snap ports (corners + edge midpoints) with visual indicators</li>
+                        <li>Click connection lines even when overlapping shapes</li>
+                        <li>Independent fill and stroke opacity controls per shape</li>
+                        <li>Touch long-press (500ms) triggers context menu</li>
+                        <li>New Canvas button with confirmation before clearing</li>
+                        <li>Rounded rect fill fix — rx="8" matches stroke radius</li>
+                        <li>Connection snapping respects shape z-ordering</li>
                     </ul>
                 </div>
                 <div class="changelog-entry">
                     <span class="ver">1.1.1</span><span class="date">Sep 7, 2026</span>
                     <ul>
-                        <li>Fixed two-finger pan (midpoint delta added as direct translation)</li>
-                        <li>Panel resize handle — drag left edge to resize (120–600px)</li>
-                        <li>Collapse button now visible with accent styling</li>
+                        <li>Fixed two-finger pan using midpoint delta translation</li>
+                        <li>Panel resize handle — drag left edge (120–600px)</li>
+                        <li>Collapse button visible with accent styling</li>
                         <li>Panel width saved/restored in localStorage</li>
-                        <li>Properties panel polished to match Layout app: section headers, prop-row layout, layer icons/hover/active states, 44px touch targets</li>
+                        <li>Properties panel polished: section headers, hover/active states, 44px touch targets</li>
                     </ul>
                 </div>
                 <div class="changelog-entry">
@@ -518,12 +604,12 @@
                     <ul>
                         <li>Pointer Events API — unified mouse, touch, and pen input</li>
                         <li>Pinch-to-zoom on touchscreens</li>
-                        <li>Touch-friendly resize handles (22px)</li>
-                        <li>Larger toolbar buttons and context menu items (40px+ targets)</li>
-                        <li>Delete and Duplicate toolbar buttons for keyboardless use</li>
+                        <li>Touch-friendly 22px resize handles</li>
+                        <li>Larger 40px+ toolbar and context menu targets</li>
+                        <li>Delete and Duplicate toolbar buttons</li>
                         <li>"Edit Text" in context menu</li>
                         <li>Versioning system and about page light theme</li>
-                        <li>Fixed: connection endpoint snap on release</li>
+                        <li>Fixed connection endpoint snap on release</li>
                     </ul>
                 </div>
                 <div class="changelog-entry">
@@ -533,18 +619,18 @@
                         <li>Export to PNG, JPG, PDF (auto-crop and full canvas)</li>
                         <li>Save/Load project files (.json)</li>
                         <li>Project name and canvas dimensions in properties panel</li>
-                        <li>Shape naming, connection naming, action log</li>
+                        <li>Shape/connection naming and action log</li>
                         <li>Text alignment and padding controls</li>
                         <li>Connection endpoint dragging with smart snap</li>
-                        <li>Free Open Tools ecosystem dark/light theme with toggle</li>
+                        <li>Free Open Tools dark/light theme with toggle</li>
                         <li>About page</li>
                     </ul>
                 </div>
                 <div class="changelog-entry">
                     <span class="ver">0.2.0</span><span class="date">Sep 3, 2026</span>
                     <ul>
-                        <li>Shape tools: rectangle, rounded rect, circle, diamond, triangle, terminator</li>
-                        <li>Line/arrow connections between shapes with outline snapping</li>
+                        <li>Shape tools: rect, rounded rect, circle, diamond, triangle, terminator</li>
+                        <li>Line/arrow connections with outline snapping</li>
                         <li>Text tool for floating labels</li>
                         <li>Fill, stroke, opacity, and text color styling</li>
                         <li>Undo/redo (50-step history)</li>

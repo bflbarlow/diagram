@@ -1,4 +1,4 @@
-# Diagram — v1.1.4
+# Diagram — v1.1.5
 
 Part of the [Free Open Tools](https://freeopentools.com/) ecosystem — a suite of browser-based utilities.
 
@@ -144,7 +144,7 @@ diagram/
 
 ## Technical Details
 
-- **Version**: 1.1.4
+- **Version**: 1.1.5
 - **Framework**: Vanilla JavaScript (ES5-compatible), no dependencies
 - **Rendering**: DOM-based shapes with inline SVG; connections rendered as SVG paths
 - **Custom SVG**: Supports pasting SVG code with auto-detected viewBox or manual viewBox controls
@@ -159,6 +159,14 @@ diagram/
 - **Dependencies**: `html2canvas` and `jspdf` vendored locally in `vendor/` for export (PNG, JPG, PDF)
 
 ## Version History
+
+### v1.1.5 (Sep 12, 2026)
+- **Treat as native shape**: Checkbox on custom SVGs enables fill/stroke/opacity controls from the properties panel; content elements without their own fill/stroke receive the injected values, preserving the SVG's actual silhouette
+- **Pan clamped to canvas bounds**: Canvas panning clamped so the canvas edges stay reachable; pointer-based interactions (drag, resize, select) hard-clamp immediately; wheel/trackpad uses deferred clamping (150ms settle) to avoid fighting OS momentum
+- **Triangle connection snap fixed**: Connection endpoints on triangles now snap to the true slanted edge instead of falling back to the bottom-centre of the bounding box (sign error in edge-intersection math corrected)
+- **roundRect / terminator connection snap added**: Dedicated 8-segment outline cases (4 straight edges + 4 quarter-circle arcs for roundRect, 2 semicircles for terminator) compute the true distance from shape centre to the rounded visual outline, replacing the previous bounding-box clamp
+- **Named ports project to true outline**: `shapePorts()` now ray-casts each bounding-box port position through `getShapeOutlinePoint()`, so port-snapped connections land on the actual visual edge or arc for every shape type (triangle, roundRect, terminator, circle, diamond)
+- **New-line preview no longer clips**: Dotted outline preview when drawing a new connection line no longer silently clips outside the canvas container viewport
 
 ### v1.1.4 (Sep 11, 2026)
 - Fixed undo on shape click — clicking a shape no longer creates spurious undo entries; only actual moves/resizes are recorded

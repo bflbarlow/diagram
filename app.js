@@ -5,7 +5,7 @@
     'use strict';
 
     // ===== Version =====
-    var VERSION = '1.1.4';  // v1.1.4: fixed undo on shape click (no-op clicks no longer create undo entries) | added arrow-key shape movement | new-line-drawing snap now matches drag-end port-snapping (port dots + outline hint) | fixed new-line preview jitter by pinning fixed start point during drag (mirrors drag-end behavior) | added Lock Aspect Ratio and Preserve SVG Aspect Ratio to properties panel
+    var VERSION = '1.1.5';  // v1.1.5: treat-as-native checkbox on custom SVGs enables fill/stroke/opacity from properties panel | SVG silhouette-aware injection instead of bounding-box overlay | self-closing tag support in injectShapeStyle | pan clamped to canvas bounds | new-line preview no longer clips outside viewport | triangle/roundRect/terminator connection endpoints snap to true visual outline (not bounding box); named ports also project to true outline
 
     // ===== Configuration =====
     var CONFIG = {
@@ -26,7 +26,8 @@
         maxCanvasW: 10000,      // max canvas width user can set
         maxCanvasH: 10000,       // max canvas height user can set
         arrowStep: 1,            // px per arrow-key press (no modifier)
-        arrowStepBig: 10         // px per Shift+arrow-key press (when snap-to-grid is off)
+        arrowStepBig: 10,        // px per Shift+arrow-key press (when snap-to-grid is off)
+        panMargin: 100           // px margin before clamping triggers (pan clamp)
     };
 
     // ===== Arrow-key direction mapping =====
@@ -163,9 +164,12 @@
     var connWidth       = document.getElementById('conn-width');
     var connArrowStart  = document.getElementById('conn-arrow-start');
     var connArrowEnd    = document.getElementById('conn-arrow-end');
+    var connFromInput   = document.getElementById('conn-from');
+    var connToInput     = document.getElementById('conn-to');
     var customSvgCode   = document.getElementById('custom-svg-code');
     var propLockAr      = document.getElementById('prop-lock-ar');
     var propPreserveSvgAr = document.getElementById('prop-preserve-svg-ar');
+    var propTreatAsNative = document.getElementById('prop-treat-as-native');
 
     // ===== Selection helpers =====
     function isShapeId(id) { return id.charAt(0) === 's'; }
@@ -198,6 +202,25 @@
     }
     function snap(v) { return S.snapToGrid ? Math.round(v / S.gridSize) * S.gridSize : v; }
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+    // ===== Pan clamping =====
+    function clampPan() {
+        var r = container.getBoundingClientRect();
+        var cw = S.canvasW * S.zoom, ch = S.canvasH * S.zoom;
+        var m = CONFIG.panMargin;
+        S.panX = clamp(S.panX, m - cw, r.width - m);
+        S.panY = clamp(S.panY, m - ch, r.height - m);
+    }
+
+    function reClampPan() {
+        var r = container.getBoundingClientRect();
+        var cw = S.canvasW * S.zoom, ch = S.canvasH * S.zoom;
+        var m = CONFIG.panMargin;
+        S.panX = clamp(S.panX, m - cw, r.width - m);
+        S.panY = clamp(S.panY, m - ch, r.height - m);
+        applyTransform();
+    }
+
     function clampShape(s) {
         if (s.x < 0) s.x = 0;
         if (s.y < 0) s.y = 0;
@@ -251,7 +274,7 @@
                 var best = { x: cx, y: cy + hh, d: Infinity };
                 [[top, bl], [bl, br], [br, top]].forEach(function(e) {
                     var ex = e[1].x - e[0].x, ey = e[1].y - e[0].y;
-                    var denom = dx * ey - dy * ex;
+                    var denom = dy * ex - dx * ey;
                     if (Math.abs(denom) < 1e-10) return;
                     var u = ((cx - e[0].x) * dy - (cy - e[0].y) * dx) / denom;
                     var v = ((cx - e[0].x) * ey - (cy - e[0].y) * ex) / denom;
@@ -262,12 +285,67 @@
                     }
                 });
                 return { x: best.x, y: best.y };
-            default: // rect, roundRect, terminator
-                // Clamp to bounding box to get the nearest perimeter point.
-                // Handles both interior and exterior points correctly.
+            case 'roundRect':
+            case 'terminator': {
+                var r = s.type === 'terminator' ? s.height / 2 : 8;
+                r = Math.min(r, s.width / 2, s.height / 2);
+                var best = { x: cx, y: cy + hh, d: Infinity };
+                var checkSeg = function(e0x,e0y, e1x,e1y, isArc) {
+                    if (isArc) {
+                        // Circle intersection: |C + v*D - arcCenter| = r
+                        var px = cx - e0x, py = cy - e0y;
+                        var a = dx*dx + dy*dy;
+                        var b = 2*(px*dx + py*dy);
+                        var c = px*px + py*py - r*r;
+                        var disc = b*b - 4*a*c;
+                        if (disc < 0 || Math.abs(a) < 1e-10) return;
+                        var sqrtD = Math.sqrt(disc), v1 = (-b+sqrtD)/(2*a), v2 = (-b-sqrtD)/(2*a);
+                        [v1,v2].forEach(function(v) {
+                            if (v > 0) {
+                                var hx = cx + dx*v, hy = cy + dy*v;
+                                var ox = hx - e0x, oy = hy - e0y;
+                                var ok = e1x < 0 ? ox <= 0 : e1x > 0 ? ox >= 0 : true;
+                                var ok2 = e1y < 0 ? oy <= 0 : e1y > 0 ? oy >= 0 : true;
+                                if (ok && ok2) {
+                                    var dist = Math.sqrt((hx-cx)*(hx-cx)+(hy-cy)*(hy-cy));
+                                    if (dist < best.d) { best = {x:hx,y:hy}; best.d = dist; }
+                                }
+                            }
+                        });
+                    } else {
+                        var ex = e1x-e0x, ey = e1y-e0y;
+                        var denom = dy*ex - dx*ey;
+                        if (Math.abs(denom) < 1e-10) return;
+                        var u = (dx*(e0y-cy) - dy*(e0x-cx))/denom;
+                        var v = ((e0y-cy)*ex - (e0x-cx)*ey)/denom;
+                        if (v > 0 && u >= 0 && u <= 1) {
+                            var hx = cx + dx*v, hy = cy + dy*v;
+                            var dist = Math.sqrt((hx-cx)*(hx-cx)+(hy-cy)*(hy-cy));
+                            if (dist < best.d) { best = {x:hx,y:hy}; best.d = dist; }
+                        }
+                    }
+                };
+                // 4 straight edges
+                checkSeg(s.x+r, s.y, s.x+s.width-r, s.y, false);            // top
+                checkSeg(s.x+s.width, s.y+r, s.x+s.width, s.y+s.height-r, false); // right
+                checkSeg(s.x+r, s.y+s.height, s.x+s.width-r, s.y+s.height, false); // bottom
+                checkSeg(s.x, s.y+r, s.x, s.y+s.height-r, false);          // left
+                if (s.type === 'roundRect') {
+                    // 4 quarter-circle arcs (ox/oy sign encodes quadrant)
+                    checkSeg(s.x+r, s.y+r, -1, -1, true);    // TL — ox<=0, oy<=0
+                    checkSeg(s.x+s.width-r, s.y+r, 1, -1, true);    // TR — ox>=0, oy<=0
+                    checkSeg(s.x+s.width-r, s.y+s.height-r, 1, 1, true); // BR — ox>=0, oy>=0
+                    checkSeg(s.x+r, s.y+s.height-r, -1, 1, true);   // BL — ox<=0, oy>=0
+                } else {
+                    // terminator: 2 semicircles
+                    checkSeg(s.x+r, s.y+r, -1, 0, true);      // left end-cap: ox<=0
+                    checkSeg(s.x+s.width-r, s.y+r, 1, 0, true);     // right end-cap: ox>=0
+                }
+                return { x: best.x, y: best.y };
+            }
+            default: // rect (box == outline, simple clamp)
                 var nx = clamp(tx, s.x, s.x + s.width);
                 var ny = clamp(ty, s.y, s.y + s.height);
-                // If the point is inside, clamp doesn't move it — project to nearest edge
                 if (nx === tx && ny === ty) {
                     var dL = tx - s.x, dR = s.x + s.width - tx;
                     var dT = ty - s.y, dB = s.y + s.height - ty;
@@ -282,11 +360,14 @@
     }
 
     /** Returns the 8 priority connection ports (corners + edge midpoints) for a shape,
-     *  as an array of {x, y, name} in canvas coordinates. */
+     *  as an array of {x, y, name} in canvas coordinates.
+     *  For non-rectangular shapes, each port is projected onto the true visual outline
+     *  via getShapeOutlinePoint (ray from shape centre through the bounding-box position),
+     *  so port-snapped connections land exactly on the visible shape edge. */
     function shapePorts(s) {
         var x1 = s.x, y1 = s.y, x2 = s.x + s.width, y2 = s.y + s.height;
         var cx = s.x + s.width / 2, cy = s.y + s.height / 2;
-        return [
+        var raw = [
             { x: x1, y: y1,   name: 'top-left' },
             { x: cx, y: y1,   name: 'top-center' },
             { x: x2, y: y1,   name: 'top-right' },
@@ -296,6 +377,12 @@
             { x: cx, y: y2,   name: 'bottom-center' },
             { x: x2, y: y2,   name: 'bottom-right' }
         ];
+        // rect: box == outline, so raw ports are correct. Skip ray-cast for speed.
+        if (s.type === 'rect') return raw;
+        return raw.map(function(p) {
+            var o = getShapeOutlinePoint(s, p.x, p.y);
+            return { x: o.x, y: o.y, name: p.name };
+        });
     }
 
     /** Finds the nearest port on a shape within threshold px (canvas coords). Returns
@@ -386,7 +473,6 @@
     var _saveTimer = 0;
     function scheduleSave() {
         if (S.readOnly) return;  // read-only: don't persist
-        saveState();
         clearTimeout(_saveTimer);
         _saveTimer = setTimeout(saveState, 300);
     }
@@ -517,8 +603,12 @@
                 if (s.type === 'custom' && s.preserveSvgAspectRatio === undefined) {
                     s.preserveSvgAspectRatio = false;
                 }
+                if (s.type === 'custom' && s.treatAsNative === undefined) {
+                    s.treatAsNative = false;
+                }
             });
             S.selection = [];
+            clampPan();
             renderGrid(); render(); applyTransform();
             // Update toolbar inputs
             canvasWidth.value = S.canvasW; canvasHeight.value = S.canvasH;
@@ -881,7 +971,7 @@
             hidden: false,
             lockAspectRatio: false
         };
-        if (type === 'custom') { s.customSvg = ''; s.preserveSvgAspectRatio = false; }
+        if (type === 'custom') { s.customSvg = ''; s.preserveSvgAspectRatio = false; s.treatAsNative = false; }
         S.shapes.push(s);
         pushUndo();
         logAction('Created '+s.name, 'add');
@@ -1069,6 +1159,7 @@
                     inner = inner.replace(/<svg\b[^>]*>/i, '').replace(/<\/svg>\s*$/i, '');
                 }
                 if (!ext) ext = computeSvgExtent(inner);
+                if (s.treatAsNative) inner = injectShapeStyle(inner, fc, fo, sc, sw, so);
                 var par = s.preserveSvgAspectRatio ? 'xMidYMid meet' : 'none';
                 return '<svg x="0" y="0" width="'+w+'" height="'+h+'" viewBox="0 0 '+ext.w+' '+ext.h+'" preserveAspectRatio="'+par+'" overflow="hidden">'+inner+'</svg>';
             default:
@@ -1160,6 +1251,26 @@
         return { w: maxX, h: maxY };
     }
 
+    /** Injects fill/stroke/opacity attributes onto each top-level drawable element
+     *  in a custom SVG's inner content string, unless the element already declares
+     *  its own fill/stroke (author override takes precedence). */
+    function injectShapeStyle(inner, fill, fillOpacity, stroke, strokeWidth, strokeOpacity) {
+        var drawable = /<(rect|circle|ellipse|polygon|polyline|path|line)\b([^>]*)\/?>/gi;
+        return inner.replace(drawable, function(full, tag, attrs) {
+            // Strip trailing slash from self-closing tags before injecting
+            var clean = attrs.replace(/\s*\/$/, '');
+            var out = clean;
+            if (!/\bfill\s*=/.test(clean))          out += ' fill="'+fill+'"';
+            if (!/\bfill-opacity\s*=/.test(clean))   out += ' fill-opacity="'+fillOpacity+'"';
+            if (strokeWidth) {
+                if (!/\bstroke\s*=/.test(clean))         out += ' stroke="'+stroke+'"';
+                if (!/\bstroke-width\s*=/.test(clean))   out += ' stroke-width="'+strokeWidth+'"';
+                if (!/\bstroke-opacity\s*=/.test(clean)) out += ' stroke-opacity="'+strokeOpacity+'"';
+            }
+            return '<'+tag+out+'>';
+        });
+    }
+
     /** Helper: given a shape and an absolute canvas point on its perimeter, return
      *  the relative offset {x,y} in 0‑1 range.  Clamped to stay on the edge. */
     function absToRel(shape, pt) {
@@ -1238,7 +1349,7 @@
             var name = s.name || s.id;
             var zh = s.zHeight || 0;
             var isHidden = s.hidden || false;
-            var isSelected = S.selectedIds && S.selectedIds.indexOf(s.id) !== -1;
+            var isSelected = S.selection.indexOf(s.id) !== -1;
             var iconSvg = shapeIcon(s.type);
             html += '<div class="layer-item'+(isSelected ? ' active' : '')+'" data-id="'+s.id+'">';
             html += '<span class="layer-icon"><svg viewBox="0 0 24 24">'+iconSvg+'</svg></span>';
@@ -1432,6 +1543,14 @@
             connEls.forEach(function(el) { el.classList.remove('hidden'); });
             connNameInput.value = c.name || '';
             syncStyleControlsToConn(c);
+            var ep = connEndpoints(c);
+            if (ep) {
+                connFromInput.value = Math.round(ep.x1)+', '+Math.round(ep.y1);
+                connToInput.value = Math.round(ep.x2)+', '+Math.round(ep.y2);
+            } else {
+                connFromInput.value = '';
+                connToInput.value = '';
+            }
         } else if (sIds.length === 1 && cIds.length === 0) {
             var s = findShape(sIds[0]);
             if (!s) { propsPanel.classList.add('hidden'); return; }
@@ -1444,8 +1563,12 @@
             var styleEl = propsPanel.querySelector('.panel-shape-style');
             if (s.type === 'custom') {
                 customEl.classList.remove('hidden');
-                if (styleEl) styleEl.classList.add('hidden');
                 customSvgCode.value = s.customSvg || '';
+                if (!s.treatAsNative) {
+                    if (styleEl) styleEl.classList.add('hidden');
+                } else {
+                    if (styleEl) styleEl.classList.remove('hidden');
+                }
             } else {
                 customEl.classList.add('hidden');
                 if (styleEl) styleEl.classList.remove('hidden');
@@ -1463,6 +1586,10 @@
             if (propPreserveSvgAr) {
                 propPreserveSvgAr.checked = s.preserveSvgAspectRatio || false;
                 propPreserveSvgAr.style.display = s.type === 'custom' ? '' : 'none';
+            }
+            if (propTreatAsNative) {
+                propTreatAsNative.checked = s.treatAsNative || false;
+                propTreatAsNative.style.display = s.type === 'custom' ? '' : 'none';
             }
             syncStyleControlsToShape(s);
         } else {
@@ -1563,7 +1690,7 @@
         S.drawStart.y = ep.y;
         var ac = T.accent || '#2563EB';
         previewLayer.innerHTML = '<div class="snap-highlight" style="left:'+shape.x+'px;top:'+shape.y+'px;width:'+shape.width+'px;height:'+shape.height+'px;box-shadow:0 0 0 2px '+ac+', 0 0 16px rgba(37,99,235,0.3)"></div>'+
-            '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+ep.x+','+ep.y+' L'+pos.x+','+pos.y+'" stroke="'+ac+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
+            '<svg overflow="visible" style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+ep.x+','+ep.y+' L'+pos.x+','+pos.y+'" stroke="'+ac+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
         console.debug('startDrawingFromShape', shape.type, 'ep:', ep.x, ep.y, 'accent:', ac);
     }
 
@@ -1572,6 +1699,7 @@
         // Read-only mode: block all canvas interactions
         if (S.readOnly) return;
         // Track pointer for pinch-to-zoom
+        S.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
         S.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
         var ptrCount = Object.keys(S.pointers).length;
         if (ptrCount >= 2) {
@@ -1894,6 +2022,7 @@
             // 2) Pan to track midpoint movement (direct translation in container space)
             S.panX += cx - icx;
             S.panY += cy - icy;
+            clampPan();
             applyTransform();
             return;
         }
@@ -1905,6 +2034,7 @@
             S.panX += e.clientX - S.panStart.x;
             S.panY += e.clientY - S.panStart.y;
             S.panStart = { x: e.clientX, y: e.clientY };
+            clampPan();
             applyTransform();
             return;
         }
@@ -2004,7 +2134,7 @@
                     preview += renderPortPreviewHTML(nearShape, draggedEp.x, draggedEp.y, ac3);
                 }
                 var epLive = connEndpoints(connD);
-                preview += '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+epLive.x1+','+epLive.y1+' L'+epLive.x2+','+epLive.y2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
+                preview += '<svg overflow="visible" style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+epLive.x1+','+epLive.y1+' L'+epLive.x2+','+epLive.y2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
                 previewLayer.innerHTML = preview;
             } else {
                 // === Body drag — move all anchor-circle endpoints by delta ===
@@ -2062,7 +2192,7 @@
                     previewHTML += '<div class="snap-highlight" style="left:'+se2.x+'px;top:'+se2.y+'px;width:'+se2.width+'px;height:'+se2.height+'px;box-shadow:0 0 0 3px '+ac3+',0 0 16px rgba(37,99,235,0.3)"></div>';
                     previewHTML += renderPortPreviewHTML(se2, sx, sy, ac3);
                 }
-                previewLayer.innerHTML = previewHTML + '<svg style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+lx1+','+ly1+' L'+lx2+','+ly2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
+                previewLayer.innerHTML = previewHTML + '<svg overflow="visible" style="position:absolute;top:0;left:0;width:100%;height:100%"><path d="M'+lx1+','+ly1+' L'+lx2+','+ly2+'" stroke="'+ac3+'" stroke-width="2" stroke-dasharray="6,4" fill="none"/></svg>';
             }
         }
 
@@ -2348,6 +2478,7 @@
         e.preventDefault();
         if (e.ctrlKey || e.metaKey) {
             // Ctrl+scroll → zoom (Google Maps behavior)
+            clampPan();  // start from valid position
             var d = e.deltaY > 0 ? -CONFIG.zoomStep : CONFIG.zoomStep;
             var nz = clamp(S.zoom + d, CONFIG.minZoom, CONFIG.maxZoom);
             var r = container.getBoundingClientRect();
@@ -2355,10 +2486,12 @@
             S.panY = (e.clientY - r.top) - ((e.clientY - r.top) - S.panY) * (nz / S.zoom);
             S.zoom = nz;
             applyTransform();
+            clampPan();  // final result stays in bounds
         } else {
             // Plain scroll → pan (two-finger drag on trackpad)
             S.panX -= e.deltaX;
             S.panY -= e.deltaY;
+            clampPan();
             applyTransform();
         }
     }, { passive: false });
@@ -2509,11 +2642,13 @@
     document.getElementById('btn-zoom-in').addEventListener('click', function() {
         S.zoom = clamp(S.zoom + CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom);
         logAction('Zoom: '+Math.round(S.zoom*100)+'%', 'sys');
+        clampPan();
         applyTransform();
     });
     document.getElementById('btn-zoom-out').addEventListener('click', function() {
         S.zoom = clamp(S.zoom - CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom);
         logAction('Zoom: '+Math.round(S.zoom*100)+'%', 'sys');
+        clampPan();
         applyTransform();
     });
 
@@ -2554,6 +2689,7 @@
             }
         }
         localStorage.setItem('diagram-panel-collapsed', collapsed ? '1' : '0');
+        reClampPan();
     }
     btnCollapse.addEventListener('click', function(e) {
         e.stopPropagation();
@@ -2587,6 +2723,7 @@
             panelResizeHandle.classList.remove('active');
             // Save width to localStorage
             try { localStorage.setItem('diagram-panel-width', String(propsPanel.offsetWidth)); } catch (e) {}
+            reClampPan();
         });
     }
 
@@ -2726,6 +2863,21 @@
                 }
             });
             logAction('Preserve SVG aspect ratio: ' + (propPreserveSvgAr.checked ? 'on' : 'off'), 'edit');
+            pushUndo();
+            render();
+        });
+    }
+
+    // Treat as native shape checkbox
+    if (propTreatAsNative) {
+        propTreatAsNative.addEventListener('change', function() {
+            shapeSel().forEach(function(sid) {
+                var s = findShape(sid);
+                if (s && s.type === 'custom') {
+                    s.treatAsNative = propTreatAsNative.checked;
+                }
+            });
+            logAction('Treat as native: ' + (propTreatAsNative.checked ? 'on' : 'off'), 'edit');
             pushUndo();
             render();
         });
@@ -3030,6 +3182,7 @@
         var r = container.getBoundingClientRect();
         S.panX = r.width / 2 - 400;
         S.panY = 50;
+        clampPan();
         saveState();
         render();
         logAction('New canvas created', 'sys');
@@ -3104,6 +3257,9 @@
                         if (s.type === 'custom' && s.preserveSvgAspectRatio === undefined) {
                             s.preserveSvgAspectRatio = false;
                         }
+                        if (s.type === 'custom' && s.treatAsNative === undefined) {
+                            s.treatAsNative = false;
+                        }
                     });
                     S.connections = d.connections || [];
                     S.nameCounters = d.nameCounters || {};
@@ -3112,7 +3268,7 @@
                     if (typeof d.canvasW === 'number') S.canvasW = d.canvasW;
                     if (typeof d.canvasH === 'number') S.canvasH = d.canvasH;
                     S.projectName = d.projectName || 'Untitled';
-                    if (typeof d.zoom === 'number') S.zoom = d.zoom;
+                    if (typeof d.zoom === 'number' && d.zoom >= CONFIG.minZoom && d.zoom <= CONFIG.maxZoom) S.zoom = d.zoom;
                     if (typeof d.panX === 'number') S.panX = d.panX;
                     if (typeof d.panY === 'number') S.panY = d.panY;
                     // Restore metadata if present, else reset
@@ -3128,6 +3284,7 @@
                     }
                     S.selection = [];
                     S.undoStack = []; S.redoStack = [];
+                    clampPan();
                     saveState(); renderGrid(); render(); applyTransform();
                     var metaInfo = S.metadata.version ? ' (v' + S.metadata.version + ')' : '';
                     logAction('Loaded project' + metaInfo + ': ' + S.projectName, 'sys');
@@ -3228,8 +3385,8 @@
         if ((e.ctrlKey || e.metaKey) && e.key === '[') { e.preventDefault(); shapeSel().forEach(function(id) { backward(id); }); pushUndo(); render(); }
         if (e.key === 'g') { S.showGrid = !S.showGrid; document.getElementById('btn-grid').classList.toggle('active', S.showGrid); logAction('Grid: '+(S.showGrid?'on':'off'), 'sys'); renderGrid(); }
         if ((e.key === 's') && !e.ctrlKey && !e.metaKey) { S.snapToGrid = !S.snapToGrid; document.getElementById('btn-snap').classList.toggle('active', S.snapToGrid); logAction('Snap: '+(S.snapToGrid?'on':'off'), 'sys'); }
-        if (e.key === '+' || e.key === '=') { S.zoom = clamp(S.zoom + CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom); logAction('Zoom: '+Math.round(S.zoom*100)+'%', 'sys'); applyTransform(); }
-        if (e.key === '-') { S.zoom = clamp(S.zoom - CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom); logAction('Zoom: '+Math.round(S.zoom*100)+'%', 'sys'); applyTransform(); }
+        if (e.key === '+' || e.key === '=') { S.zoom = clamp(S.zoom + CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom); logAction('Zoom: '+Math.round(S.zoom*100)+'%', 'sys'); clampPan(); applyTransform(); }
+        if (e.key === '-') { S.zoom = clamp(S.zoom - CONFIG.zoomStep, CONFIG.minZoom, CONFIG.maxZoom); logAction('Zoom: '+Math.round(S.zoom*100)+'%', 'sys'); clampPan(); applyTransform(); }
         if (e.key === 'Enter' && shapeSel().length === 1 && !textEditor.classList.contains('visible')) startTextEdit(shapeSel()[0]);
         if ((e.ctrlKey || e.metaKey) && e.key === '\\') { e.preventDefault(); togglePanel(); }
         // ===== Arrow-key shape movement =====
@@ -3367,6 +3524,9 @@
                     if (s.type === 'custom' && s.preserveSvgAspectRatio === undefined) {
                         s.preserveSvgAspectRatio = false;
                     }
+                    if (s.type === 'custom' && s.treatAsNative === undefined) {
+                        s.treatAsNative = false;
+                    }
                     if (!s.name) {
                         var t = s.type || 'shape';
                         if (!S.nameCounters[t]) S.nameCounters[t] = 0;
@@ -3380,6 +3540,7 @@
                 });
 
                 logAction('Loaded '+S.shapes.length+' shapes, '+S.connections.length+' connections', 'sys');
+                clampPan();
             } catch(e) {
                 console.error('Failed to load saved state:', e);
                 saved = null;
@@ -3431,12 +3592,16 @@
         if (!saved) {
             var r = container.getBoundingClientRect();
             S.panX = r.width/2 - 500; S.panY = 50;
+            clampPan();
             applyTransform();
         }
     }
 
     init();
 
+    window.addEventListener('resize', function() {
+        reClampPan();
+    });
     window.addEventListener('beforeunload', function() { saveState(); releaseChannel(); });
     window.addEventListener('pagehide', function() { saveState(); releaseChannel(); });
     document.addEventListener('visibilitychange', function() {
