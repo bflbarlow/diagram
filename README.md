@@ -1,4 +1,4 @@
-# Diagram — v1.1.5
+# Diagram — v1.1.6
 
 Part of the [Free Open Tools](https://freeopentools.com/) ecosystem — a suite of browser-based utilities.
 
@@ -102,7 +102,7 @@ Create custom shapes by pasting SVG code:
 | `G` | Toggle grid |
 | `S` | Toggle snap-to-grid |
 | `Ctrl/Cmd+Z` | Undo |
-| `Ctrl/Cmd+Y` | Redo |
+| `Ctrl/Cmd+Y` / `Ctrl/Cmd+Shift+Z` | Redo |
 | `Ctrl/Cmd+D` | Duplicate selected |
 | `Delete`/`Backspace` | Delete selected |
 | `Enter` | Edit text of selected shape |
@@ -144,7 +144,7 @@ diagram/
 
 ## Technical Details
 
-- **Version**: 1.1.5
+- **Version**: 1.1.6
 - **Framework**: Vanilla JavaScript (ES5-compatible), no dependencies
 - **Rendering**: DOM-based shapes with inline SVG; connections rendered as SVG paths
 - **Custom SVG**: Supports pasting SVG code with auto-detected viewBox or manual viewBox controls
@@ -159,6 +159,18 @@ diagram/
 - **Dependencies**: `html2canvas` and `jspdf` vendored locally in `vendor/` for export (PNG, JPG, PDF)
 
 ## Version History
+
+### v1.1.6 (Sep 17, 2026)
+- **Connection z-height**: Selecting a line now shows an editable Z field in the properties panel, matching shapes; higher Z renders on top
+- **Unique z-heights guaranteed**: Every visible shape and connection is assigned a unique dense rank (0..N-1), so no two elements ever share a z-height
+- **Global stacking order**: Shapes and lines share a single stack; a new line defaults just below the topmost shape it connects
+- **New shapes stack on top**: Newly created shapes appear above existing elements
+- **Anchors and hidden shapes excluded**: Internal anchor points and hidden shapes do not consume a z-height; a hidden shape rejoins the stack when shown
+- **Layers panel cleans up**: Internal anchor points are no longer listed in the Layers panel
+- **Resize keeps position**: Resizing an off-grid shape (e.g. after a 1px nudge) no longer snaps or moves the anchored edge — only the dragged edge snaps to the grid, so the shape's position stays put
+- **Text padding on all four edges**: The shape text padding setting now insets text from every edge, not just the aligned ones
+- **Snapped line ends follow the outline on resize**: A line attached to a rounded corner or arc (terminator, roundRect) now re-projects onto the true outline when the shape is resized, instead of drifting off it
+- **Redo shortcut**: `Ctrl/Cmd+Shift+Z` now redoes, alongside the existing `Ctrl/Cmd+Y`
 
 ### v1.1.5 (Sep 12, 2026)
 - **Treat as native shape**: Checkbox on custom SVGs enables fill/stroke/opacity controls from the properties panel; content elements without their own fill/stroke receive the injected values, preserving the SVG's actual silhouette

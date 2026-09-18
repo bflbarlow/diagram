@@ -186,10 +186,93 @@ If setting `propLockAr.checked` or `propPreserveSvgAr.checked` in `renderProps()
 
 ---
 
-## Bug 2: (Placeholder)
+## Bug 2: Line Tool Appears Active When Not Selected
 
-*Add future suspected bugs here.*
+**Status:** 🔴 Uninvestigated — suspected
+**First observed:** 2026-09-17
+**Reproducibility:** Intermittent ("sometimes")
+
+### Description
+
+The line/connection tool sometimes appears to be active when it has not been selected. The user can draw or start a line even though the line tool button does not look engaged.
+
+### Suspected Cause
+
+Unknown. Could be a stuck interaction mode (e.g. a line-draw mode flag not cleared after a previous action, an Escape/deselect not resetting it, or a keyboard shortcut/toolbar state desync). Compare the state flag that gates line drawing against the toolbar button's active class to find where they can diverge.
+
+### Next Steps
+
+1. Identify the state flag(s) that enable line drawing and the toolbar button's `.active` class logic.
+2. Reproduce after: drawing a line, pressing Escape mid-draw, switching tools quickly, and using keyboard shortcuts.
+3. Log the flag and button class after each action to find the desync point.
 
 ---
 
-*Document version 1.0 — initial suspected bug log created 2026-09-11.*
+## Bug 3: Line Snaps to a Shape Other Than the Highlighted One
+
+**Status:** 🔴 Uninvestigated — suspected
+**First observed:** 2026-09-17
+**Reproducibility:** Intermittent
+
+### Description
+
+When drawing a line, it sometimes snaps to a shape that is not the highlighted (candidate) shape. The user suspects the cursor is slightly outside the highlighted shape's bounds, yet the snap should still attach to the highlighted shape while it is highlighted.
+
+### Suspected Cause
+
+The snap/highlight resolution likely has a mismatch: the highlight ring is drawn for shape A (nearest by one metric), but the endpoint projection/snap picks shape B (nearest by a different metric, e.g. raw centre distance vs. true outline distance, or a stale candidate). A cursor just outside the highlighted outline can then land closer to a different shape's snap region.
+
+### Next Steps
+
+1. Check the order of operations: highlight candidate selection vs. endpoint snap target selection — they should use the same candidate.
+2. Verify the snap region (tolerance) around the highlighted shape's true outline is generous enough that "just outside" still attaches to it.
+3. Reproduce with two shapes close together and move the cursor across the boundary, logging which shape is highlighted vs. which shape receives the snap.
+
+---
+
+## Bug 4: Exported Image/PDF Does Not Include Lines
+
+**Status:** 🔴 Uninvestigated — suspected (not yet reproduced)
+**First observed:** 2026-09-17
+**Reproducibility:** Unknown
+
+### Description
+
+Exports (PNG/PDF via html2canvas) sometimes omit connection lines entirely. The user suspects it is related to z-heights, but has not been able to recreate it.
+
+### Suspected Cause
+
+Possibly the unified z-order changes (v1.1.6) causing connections to render at an unexpected `z-index`, or the export path reading/render the connection layer differently from the on-screen canvas. Since html2canvas 1.4.1 parses `display` and positioning but has limited layout support, a z-index/stacking or stacking-context difference could drop the lines.
+
+### Next Steps
+
+1. Attempt to reproduce: export a diagram containing connections and inspect the output.
+2. Compare the on-screen DOM (z-index values, SVG/canvas layers) with what html2canvas captures.
+3. Temporarily pin connection z-index to a fixed high value and re-export to test the z-height hypothesis.
+
+---
+
+## Bug 5: Saved State Sometimes Completely Empty
+
+**Status:** 🔴 Uninvestigated — suspected
+**First observed:** 2026-09-17
+**Reproducibility:** Intermittent
+
+### Description
+
+Sometimes a save is completely empty — the saved diagram contains no shapes/connections when reloaded (or the saved payload is empty). The user suspects this may be incognito/private browsing mode, where `localStorage` is unavailable or ephemeral.
+
+### Suspected Cause
+
+Most likely `localStorage` being blocked, cleared, or per-session in private/incognito mode, causing the app to fall back to an empty state. Could also be a `saveState()` error swallowed silently, or a save racing an initialization/reset that writes an empty document.
+
+### Next Steps
+
+1. Detect `localStorage` availability/failure and surface a warning instead of silently saving nothing.
+2. Log the serialized payload size at save time to confirm whether an empty document is being written.
+3. Test in incognito/private mode (and with storage disabled) to confirm the suspicion.
+4. Check for a save/first-run race that could overwrite a good save with an empty one.
+
+---
+
+*Document version 1.1 — bugs 2–5 added 2026-09-17.*

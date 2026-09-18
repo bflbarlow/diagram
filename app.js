@@ -5,7 +5,7 @@
     'use strict';
 
     // ===== Version =====
-    var VERSION = '1.1.5';  // v1.1.5: treat-as-native checkbox on custom SVGs enables fill/stroke/opacity from properties panel | SVG silhouette-aware injection instead of bounding-box overlay | self-closing tag support in injectShapeStyle | pan clamped to canvas bounds | new-line preview no longer clips outside viewport | triangle/roundRect/terminator connection endpoints snap to true visual outline (not bounding box); named ports also project to true outline
+    var VERSION = '1.1.6';  // v1.1.6: connection z-height field in properties panel | global unique z-heights (dense ranks 0..N-1, no two visible elements share a z) | shapes and connections share one stack | new shapes stack on top | anchors and hidden shapes excluded from z-order | resize keeps off-grid anchored edge (only dragged edge snaps) | text padding applies to all four edges | Ctrl/Cmd+Shift+Z redo | snapped line ends re-project onto rounded outlines on resize
 
     // ===== Configuration =====
     var CONFIG = {
@@ -166,6 +166,7 @@
     var connArrowEnd    = document.getElementById('conn-arrow-end');
     var connFromInput   = document.getElementById('conn-from');
     var connToInput     = document.getElementById('conn-to');
+    var connZInput      = document.getElementById('conn-zHeight');
     var customSvgCode   = document.getElementById('custom-svg-code');
     var propLockAr      = document.getElementById('prop-lock-ar');
     var propPreserveSvgAr = document.getElementById('prop-preserve-svg-ar');
@@ -607,6 +608,8 @@
                     s.treatAsNative = false;
                 }
             });
+            // Enforce the unique z-height invariant on all participating elements.
+            normalizeZHeights();
             S.selection = [];
             clampPan();
             renderGrid(); render(); applyTransform();
@@ -905,6 +908,10 @@
     }
     function pushUndo() {
         if (S._batchUndo) return;
+        // Defensive choke point: every mutation is followed by pushUndo, so this
+        // guarantees the uniqueness invariant (and normalized snapshots) without
+        // having to remember to call normalizeZHeights() everywhere.
+        normalizeZHeights();
         S.undoStack.push(JSON.stringify({ shapes: S.shapes, connections: S.connections }));
         if (S.undoStack.length > CONFIG.maxUndo) S.undoStack.shift();
         S.redoStack = [];
@@ -973,6 +980,9 @@
         };
         if (type === 'custom') { s.customSvg = ''; s.preserveSvgAspectRatio = false; s.treatAsNative = false; }
         S.shapes.push(s);
+        // New shapes stack on top (matches the old index tiebreak for z=0 shapes).
+        // Anchors are not z-participants, so this is a no-op for them.
+        moveZToRank(s.id, zElementList().length - 1);
         pushUndo();
         logAction('Created '+s.name, 'add');
         return s;
@@ -989,7 +999,8 @@
             stroke: strokeInput.value,
             sw: parseInt(swInput.value) || 2,
             arrowStart: arrowStart || false,
-            arrowEnd: arrowEnd || false
+            arrowEnd: arrowEnd || false,
+            zHeight: connDefaultZ(fromId, toId)
         };
         S.connections.push(c);
         pushUndo();
@@ -1081,33 +1092,39 @@
         logAction('Pasted ' + newShapes.length + ' shape(s)', 'add');
     }
 
-    function toFront(id) {
+    function zElementLabel(id) {
         var s = findShape(id);
-        if (!s) return;
-        var maxZ = 0;
-        S.shapes.forEach(function(sh) { if ((sh.zHeight || 0) > maxZ) maxZ = sh.zHeight || 0; });
-        s.zHeight = maxZ + 1;
-        logAction('Bring to front '+s.name, 'move');
+        if (s) return s.name || id;
+        var c = findConn(id);
+        if (c) return c.name || id;
+        return id;
+    }
+    function zElementRank(id) {
+        var list = zElementList();
+        for (var i = 0; i < list.length; i++) { if (list[i].id === id) return i; }
+        return -1;
+    }
+    function toFront(id) {
+        if (zElementRank(id) < 0) return;
+        moveZToRank(id, zElementList().length - 1);
+        logAction('Bring to front '+zElementLabel(id), 'move');
     }
     function toBack(id) {
-        var s = findShape(id);
-        if (!s) return;
-        var minZ = 0;
-        S.shapes.forEach(function(sh) { if ((sh.zHeight || 0) < minZ) minZ = sh.zHeight || 0; });
-        s.zHeight = minZ - 1;
-        logAction('Send to back '+s.name, 'move');
+        if (zElementRank(id) < 0) return;
+        moveZToRank(id, 0);
+        logAction('Send to back '+zElementLabel(id), 'move');
     }
     function forward(id) {
-        var s = findShape(id);
-        if (!s) return;
-        s.zHeight = (s.zHeight || 0) + 1;
-        logAction('Bring forward '+s.name, 'move');
+        var rank = zElementRank(id);
+        if (rank < 0 || rank >= zElementList().length - 1) return;
+        moveZToRank(id, rank + 1);
+        logAction('Bring forward '+zElementLabel(id), 'move');
     }
     function backward(id) {
-        var s = findShape(id);
-        if (!s) return;
-        s.zHeight = (s.zHeight || 0) - 1;
-        logAction('Send backward '+s.name, 'move');
+        var rank = zElementRank(id);
+        if (rank < 0 || rank <= 0) return;
+        moveZToRank(id, rank - 1);
+        logAction('Send backward '+zElementLabel(id), 'move');
     }
 
     // ===== SVG generators =====
@@ -1298,7 +1315,14 @@
                 // Anchor circle or legacy connection — use center or dynamic outline
                 return { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
             }
-            return relToAbs(shape, rel);
+            var p = relToAbs(shape, rel);
+            // Non-rectangular outlines: re-project the stored relative point onto the
+            // true outline. A point snapped to a rounded corner or arc is stored as a
+            // linear 0-1 offset, which drifts off the outline when the shape is
+            // resized (arc centres move independently of the bounding box). Ray-casting
+            // through the point keeps the endpoint on the visible edge for every size.
+            if (shape.type !== 'rect') return getShapeOutlinePoint(shape, p.x, p.y);
+            return p;
         }
 
         var p1 = ep(a, c.fromRel);
@@ -1323,8 +1347,9 @@
     function renderLayouts() {
         var container = document.getElementById('panel-layers');
         if (!container) return;
-        // Sort shapes by zHeight ascending, then by array index for stability
-        var sorted = S.shapes.slice().sort(function(a, b) {
+        // Sort shapes by zHeight ascending, then by array index for stability.
+        // Anchors are internal helpers and never appear in the Layers panel.
+        var sorted = S.shapes.slice().filter(function(s) { return !s.isAnchor; }).sort(function(a, b) {
             var dz = (a.zHeight || 0) - (b.zHeight || 0);
             if (dz !== 0) return dz;
             return S.shapes.indexOf(a) - S.shapes.indexOf(b);
@@ -1389,18 +1414,79 @@
             '</svg>';
     }
 
-    // z-index helper: shapes get z-index based on zHeight sort position
-    function shapeZ(idx) { return idx * 2 + 2; }
-    function connZ(conn) {
-        var a = findShape(conn.from), b = findShape(conn.to);
-        var ai = a ? S.shapes.indexOf(a) : -1;
-        var bi = b ? S.shapes.indexOf(b) : -1;
-        var maxI = Math.max(ai, bi);
-        return maxI >= 0 ? shapeZ(maxI) - 1 : 1;
+    // ===== Z-order =====
+    /** Default z-height for a connection: the higher of its two endpoint shapes,
+     *  so the line tucks just under the shapes it connects. */
+    function connDefaultZ(fromId, toId) {
+        var a = findShape(fromId), b = findShape(toId);
+        // Anchors and hidden shapes do not participate in the z stack.
+        var za = (a && !a.isAnchor && !a.hidden) ? (a.zHeight || 0) : 0;
+        var zb = (b && !b.isAnchor && !b.hidden) ? (b.zHeight || 0) : 0;
+        return Math.max(za, zb);
+    }
+    /** Effective z-height of a connection (explicit value, else derived default). */
+    function getConnZHeight(conn) {
+        if (conn && conn.zHeight != null) return conn.zHeight;
+        return conn ? connDefaultZ(conn.from, conn.to) : 0;
+    }
+    /** True when an element participates in the global z-height stack.
+     *  Anchors are internal helpers and hidden shapes are not rendered, so
+     *  neither consumes a z-height rank. */
+    function isZParticipant(obj) {
+        if (!obj) return false;
+        if (obj.isAnchor) return false;
+        if (obj.hidden) return false;
+        return true;
+    }
+    /** Canonical stacking order over all z-participating elements.
+     *  Primary sort: effective zHeight ascending. Ties only occur for legacy /
+     *  unnormalized data and break connections below shapes, then by creation
+     *  index. Returns [{kind, obj, id, z, order}]. */
+    function zElementList() {
+        var entries = [];
+        S.shapes.forEach(function(s, i) {
+            if (!isZParticipant(s)) return;
+            entries.push({ kind: 'shape', obj: s, id: s.id, z: s.zHeight || 0, order: i });
+        });
+        S.connections.forEach(function(c, i) {
+            if (!connEndpoints(c)) return;
+            entries.push({ kind: 'conn', obj: c, id: c.id, z: getConnZHeight(c), order: i });
+        });
+        entries.sort(function(a, b) {
+            if (a.z !== b.z) return a.z - b.z;
+            if (a.kind !== b.kind) return a.kind === 'conn' ? -1 : 1;
+            return a.order - b.order;
+        });
+        return entries;
+    }
+    /** Enforces the uniqueness invariant: every participating element receives a
+     *  dense, unique rank 0..N-1, ascending by stack order. Idempotent. */
+    function normalizeZHeights() {
+        zElementList().forEach(function(e, rank) { e.obj.zHeight = rank; });
+    }
+    /** Render-time map of element id -> z-index (1-based, higher = on top).
+     *  Non-participants (anchors) get no entry and fall back at render time. */
+    function computeZOrder() {
+        var map = {};
+        zElementList().forEach(function(e, i) { map[e.id] = i + 1; });
+        return map;
+    }
+    /** Move any participating element to a specific rank in the global stack.
+     *  Clamps to range and re-densifies all ranks. No-op for non-participants. */
+    function moveZToRank(id, rank) {
+        var list = zElementList();
+        var from = -1;
+        for (var i = 0; i < list.length; i++) { if (list[i].id === id) { from = i; break; } }
+        if (from < 0) return;
+        var to = Math.max(0, Math.min(list.length - 1, rank));
+        var el = list.splice(from, 1)[0];
+        list.splice(to, 0, el);
+        list.forEach(function(e, i) { e.obj.zHeight = i; });
     }
 
     function renderShapes() {
         shapesLayer.innerHTML = '';
+        var zOrder = computeZOrder();
         // Sort by zHeight ascending, then array index for stability
         var sortedShapes = S.shapes.slice().filter(function(s) { return !s.hidden; }).sort(function(a, b) {
             var dz = (a.zHeight || 0) - (b.zHeight || 0);
@@ -1413,7 +1499,7 @@
             el.dataset.id = s.id;
             el.style.left = s.x+'px'; el.style.top = s.y+'px';
             el.style.width = s.width+'px'; el.style.height = s.height+'px';
-            el.style.zIndex = shapeZ(idx);
+            el.style.zIndex = zOrder[s.id] || 1;
             el.style.opacity = s.opacity;
 
             var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1426,17 +1512,22 @@
 
             if (s.text) {
                 var align = s.textAlign || 'center';
+                // Outer box is inset by textPad on all four edges; the inner
+                // element fills its width and aligns the text.
+                var pad = (s.textPad != null ? s.textPad : 8) + 'px';
+                var box = document.createElement('div');
+                box.className = 'shape-text';
+                box.style.top = pad;
+                box.style.right = pad;
+                box.style.bottom = pad;
+                box.style.left = pad;
                 var t = document.createElement('div');
-                t.className = 'shape-text shape-text-' + align;
-                var pad = s.textPad || 0;
-                if (align === 'top-left' || align === 'top-center' || align === 'top-right') t.style.top = pad + 'px';
-                if (align === 'bottom-left' || align === 'bottom-center' || align === 'bottom-right') t.style.bottom = pad + 'px';
-                if (align === 'top-left' || align === 'middle-left' || align === 'bottom-left') t.style.left = pad + 'px';
-                if (align === 'top-right' || align === 'middle-right' || align === 'bottom-right') t.style.right = pad + 'px';
+                t.className = 'shape-text-inner shape-text-' + align;
                 t.textContent = s.text;
                 t.style.fontSize = s.fontSize + 'px';
                 t.style.color = s.textColor || '#111113';
-                el.appendChild(t);
+                box.appendChild(t);
+                el.appendChild(box);
             }
 
             if (S.selection.includes(s.id) && !s.locked) {
@@ -1463,6 +1554,7 @@
         var oldConns = shapesLayer.querySelectorAll('.diagram-conn');
         for (var oi = 0; oi < oldConns.length; oi++) oldConns[oi].remove();
 
+        var zOrder = computeZOrder();
         S.connections.forEach(function(c) {
             var ep = connEndpoints(c);
             if (!ep) return;
@@ -1482,7 +1574,7 @@
             var el = document.createElement('div');
             el.className = 'diagram-conn';
             el.dataset.connId = c.id;
-            el.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:'+connZ(c)+';pointer-events:none;';
+            el.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:'+(zOrder[c.id] || 1)+';pointer-events:none;';
             var pathClasses = sel ? 'conn-sel' : '';
             var pathHtml = '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none"' +
                 (pathClasses ? ' class="'+pathClasses+'"' : '')+'/>'+arrowEls;
@@ -1523,6 +1615,7 @@
         connWidth.value = c.sw;
         connArrowStart.checked = c.arrowStart || false;
         connArrowEnd.checked = c.arrowEnd || false;
+        if (connZInput) connZInput.value = getConnZHeight(c);
     }
 
     function renderProps() {
@@ -2041,6 +2134,16 @@
         if (S.isResizing) {
             var rs = S.resizeStart, h = S.resizeHandle;
             var dx = pos.x - rs.mx, dy = pos.y - rs.my;
+            // Snap only the edge(s) being dragged, by snapping the pointer delta
+            // relative to that edge. The opposite (anchored) edge is never snapped,
+            // so an off-grid shape (e.g. nudged 1px) no longer jumps when a resize
+            // starts — only the dragged edge moves.
+            var dxE = snap(rs.sx + rs.sw + dx) - (rs.sx + rs.sw);
+            var dxW = snap(rs.sx + dx) - rs.sx;
+            var dyS = snap(rs.sy + rs.sh + dy) - (rs.sy + rs.sh);
+            var dyN = snap(rs.sy + dy) - rs.sy;
+            var mdx = h.includes('w') ? dxW : dxE;
+            var mdy = h.includes('n') ? dyN : dyS;
             shapeSel().forEach(function(id) {
                 var s = findShape(id);
                 if (!s) return;
@@ -2050,13 +2153,13 @@
                     var ratio = rs.sw / rs.sh;
                     // Edge handles: the single axis drives both dimensions
                     if (h.includes('e') || h.includes('w')) {
-                        if (h.includes('e')) nw = Math.max(CONFIG.minShapeSize, rs.sw + dx);
-                        if (h.includes('w')) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nx = rs.sx + rs.sw - nw; }
+                        if (h.includes('e')) nw = Math.max(CONFIG.minShapeSize, rs.sw + mdx);
+                        if (h.includes('w')) { nw = Math.max(CONFIG.minShapeSize, rs.sw - mdx); nx = rs.sx + rs.sw - nw; }
                         nh = nw / ratio;
                         if (h.includes('n')) ny = rs.sy + rs.sh - nh;
                     } else if (h.includes('s') || h.includes('n')) {
-                        if (h.includes('s')) nh = Math.max(CONFIG.minShapeSize, rs.sh + dy);
-                        if (h.includes('n')) { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); ny = rs.sy + rs.sh - nh; }
+                        if (h.includes('s')) nh = Math.max(CONFIG.minShapeSize, rs.sh + mdy);
+                        if (h.includes('n')) { nh = Math.max(CONFIG.minShapeSize, rs.sh - mdy); ny = rs.sy + rs.sh - nh; }
                         nw = nh * ratio;
                         if (h.includes('w')) nx = rs.sx + rs.sw - nw;
                     }
@@ -2064,30 +2167,33 @@
                     if (h === 'se' || h === 'sw' || h === 'ne' || h === 'nw') {
                         var useDx = Math.abs(dx) >= Math.abs(dy);
                         if (h === 'se') {
-                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw + dx); nh = nw / ratio; }
-                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh + dy); nw = nh * ratio; }
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw + mdx); nh = nw / ratio; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh + mdy); nw = nh * ratio; }
                         } else if (h === 'sw') {
-                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nh = nw / ratio; nx = rs.sx + rs.sw - nw; }
-                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh + dy); nw = nh * ratio; nx = rs.sx + rs.sw - nw; }
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw - mdx); nh = nw / ratio; nx = rs.sx + rs.sw - nw; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh + mdy); nw = nh * ratio; nx = rs.sx + rs.sw - nw; }
                         } else if (h === 'ne') {
-                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw + dx); nh = nw / ratio; ny = rs.sy + rs.sh - nh; }
-                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); nw = nh * ratio; ny = rs.sy + rs.sh - nh; }
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw + mdx); nh = nw / ratio; ny = rs.sy + rs.sh - nh; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh - mdy); nw = nh * ratio; ny = rs.sy + rs.sh - nh; }
                         } else if (h === 'nw') {
-                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nh = nw / ratio; nx = rs.sx + rs.sw - nw; ny = rs.sy + rs.sh - nh; }
-                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); nw = nh * ratio; nx = rs.sx + rs.sw - nw; ny = rs.sy + rs.sh - nh; }
+                            if (useDx) { nw = Math.max(CONFIG.minShapeSize, rs.sw - mdx); nh = nw / ratio; nx = rs.sx + rs.sw - nw; ny = rs.sy + rs.sh - nh; }
+                            else       { nh = Math.max(CONFIG.minShapeSize, rs.sh - mdy); nw = nh * ratio; nx = rs.sx + rs.sw - nw; ny = rs.sy + rs.sh - nh; }
                         }
                     }
                     // Enforce minShapeSize on both dimensions with ratio
                     if (nw < CONFIG.minShapeSize) { nw = CONFIG.minShapeSize; nh = nw / ratio; }
                     if (nh < CONFIG.minShapeSize) { nh = CONFIG.minShapeSize; nw = nh * ratio; }
+                    // Re-anchor the fixed edge in case the min clamp changed a dimension
+                    if (h.includes('w')) nx = rs.sx + rs.sw - nw;
+                    if (h.includes('n')) ny = rs.sy + rs.sh - nh;
                 } else {
-                    // Original independent resize (unchanged)
-                    if (h.includes('e')) nw = Math.max(CONFIG.minShapeSize, rs.sw + dx);
-                    if (h.includes('w')) { nw = Math.max(CONFIG.minShapeSize, rs.sw - dx); nx = rs.sx + rs.sw - nw; }
-                    if (h.includes('s')) nh = Math.max(CONFIG.minShapeSize, rs.sh + dy);
-                    if (h.includes('n')) { nh = Math.max(CONFIG.minShapeSize, rs.sh - dy); ny = rs.sy + rs.sh - nh; }
+                    // Independent resize — snap only the dragged edge(s)
+                    if (h.includes('e')) nw = Math.max(CONFIG.minShapeSize, rs.sw + mdx);
+                    if (h.includes('w')) { nw = Math.max(CONFIG.minShapeSize, rs.sw - mdx); nx = rs.sx + rs.sw - nw; }
+                    if (h.includes('s')) nh = Math.max(CONFIG.minShapeSize, rs.sh + mdy);
+                    if (h.includes('n')) { nh = Math.max(CONFIG.minShapeSize, rs.sh - mdy); ny = rs.sy + rs.sh - nh; }
                 }
-                s.x = snap(nx); s.y = snap(ny); s.width = snap(nw); s.height = snap(nh);
+                s.x = nx; s.y = ny; s.width = nw; s.height = nh;
                 clampShape(s);
             });
             render();
@@ -2930,10 +3036,13 @@
 
     // Z-height
     propZHeight.addEventListener('change', function() {
-        var v = parseInt(propZHeight.value) || 0;
+        var v = parseInt(propZHeight.value, 10);
+        if (isNaN(v)) v = 0;
         shapeSel().forEach(function(sid) {
             var s = findShape(sid);
-            if (s) s.zHeight = v;
+            if (!s) return;
+            if (isZParticipant(s)) moveZToRank(sid, v);
+            else s.zHeight = v;   // hidden / anchor: not part of the stack
         });
         logAction('Z-height → '+v, 'edit');
         pushUndo();
@@ -2957,12 +3066,14 @@
     document.addEventListener('change', function(e) {
         if (e.target.classList.contains('layer-z')) {
             var id = e.target.dataset.id;
-            var v = parseInt(e.target.value) || 0;
+            var v = parseInt(e.target.value, 10);
+            if (isNaN(v)) v = 0;
             var s = findShape(id);
             if (s) {
-                s.zHeight = v;
+                if (isZParticipant(s)) moveZToRank(id, v);
+                else s.zHeight = v;   // hidden / anchor: not part of the stack
                 // Also reflect in properties panel if this shape is selected
-                if (propZHeight) propZHeight.value = v;
+                if (propZHeight) propZHeight.value = s.zHeight || 0;
                 logAction('Z-height → '+v+' ('+s.name+')', 'edit');
                 pushUndo();
                 render();
@@ -3102,6 +3213,18 @@
         pushUndo();
         render();
     });
+
+    // Connection z-height
+    if (connZInput) {
+        connZInput.addEventListener('change', function() {
+            var v = parseInt(connZInput.value, 10);
+            if (isNaN(v)) v = 0;
+            connSel().forEach(function(cid) { moveZToRank(cid, v); });
+            logAction('Conn Z → '+v, 'edit');
+            pushUndo();
+            render();
+        });
+    }
 
     // Connection name
     connNameInput.addEventListener('change', function() {
@@ -3284,6 +3407,8 @@
                     }
                     S.selection = [];
                     S.undoStack = []; S.redoStack = [];
+                    // Enforce the unique z-height invariant on all participating elements.
+                    normalizeZHeights();
                     clampPan();
                     saveState(); renderGrid(); render(); applyTransform();
                     var metaInfo = S.metadata.version ? ' (v' + S.metadata.version + ')' : '';
@@ -3338,7 +3463,7 @@
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         // Read-only mode: block all mutations (Esc and zoom still work)
         var isMutationKey = (e.key === 'Delete' || e.key === 'Backspace' ||
-            (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'y' || e.key === 'c' || e.key === 'v' || e.key === 'd' || e.key === ']' || e.key === '[') ||
+            (e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y' || e.key === 'c' || e.key === 'v' || e.key === 'd' || e.key === ']' || e.key === '[') ||
             (ARROW_DELTA[e.key] && shapeSel().length));
         if (S.readOnly && isMutationKey) return;
 
@@ -3376,8 +3501,8 @@
             updateToolBodyClass();
             return;
         }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
         if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); copySelection(); }
         if ((e.ctrlKey || e.metaKey) && e.key === 'v') { e.preventDefault(); pasteClipboard(); pushUndo(); render(); }
         if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); shapeSel().forEach(function(id) { dup(id); }); pushUndo(); render(); }
@@ -3539,6 +3664,9 @@
                     if (!c.name) { S.connNameCounter++; c.name = 'Line ' + S.connNameCounter; }
                 });
 
+                // Enforce the unique z-height invariant on all participating elements.
+                normalizeZHeights();
+
                 logAction('Loaded '+S.shapes.length+' shapes, '+S.connections.length+' connections', 'sys');
                 clampPan();
             } catch(e) {
@@ -3575,6 +3703,7 @@
                 if (fb && !fb.isAnchor) c.toRel   = absToRel(fb, { x: ep.x2, y: ep.y2 });
             });
             // Immediately persist the demo state so it survives refresh
+            normalizeZHeights();
             saveState();
         }
 

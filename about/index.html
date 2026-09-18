@@ -384,7 +384,7 @@
             <div class="header-row">
                 <a href="/" class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M10 17.5h4M17 6.5v4M17 14v4"/></svg> <span>diagram</span></a>
             </div>
-            <h1>diagram <span class="version" id="version-display">v1.1.5</span></h1>
+            <h1>diagram <span class="version" id="version-display">v1.1.6</span></h1>
             <p class="subtitle">A lightweight diagram editor built with vanilla HTML, CSS, and JavaScript. No dependencies, no build step. Create flowcharts and diagrams directly in the browser.</p>
         </header>
 
@@ -522,7 +522,7 @@
                 <div class="shortcut-item"><span class="kbd">G</span> <span>Toggle grid</span></div>
                 <div class="shortcut-item"><span class="kbd">S</span> <span>Toggle snap</span></div>
                 <div class="shortcut-item"><span class="kbd">Ctrl+Z</span> <span>Undo</span></div>
-                <div class="shortcut-item"><span class="kbd">Ctrl+Y</span> <span>Redo</span></div>
+                <div class="shortcut-item"><span class="kbd">Ctrl+Y</span> <span class="kbd">Ctrl+Shift+Z</span> <span>Redo</span></div>
                 <div class="shortcut-item"><span class="kbd">Ctrl+D</span> <span>Duplicate</span></div>
                 <div class="shortcut-item"><span class="kbd">Delete</span> <span>Delete selected</span></div>
                 <div class="shortcut-item"><span class="kbd">Enter</span> <span>Edit text</span></div>
@@ -547,6 +547,21 @@
         <section>
             <h2>Version History</h2>
             <div class="changelog">
+                <div class="changelog-entry">
+                    <span class="ver">1.1.6</span><span class="date">Sep 17, 2026</span>
+                    <ul>
+                        <li><strong>Connection z-height</strong> — selecting a line shows an editable Z field in the properties panel, matching shapes</li>
+                        <li><strong>Unique z-heights guaranteed</strong> — every visible shape and connection is assigned a unique Z (dense ranks 0..N-1); two elements can never share a z-height</li>
+                        <li><strong>Global stacking order</strong> — shapes and lines share one stack; a new line defaults just below the topmost shape it connects</li>
+                        <li><strong>New shapes stack on top</strong> — newly created shapes appear above existing elements</li>
+                        <li><strong>Anchors and hidden shapes excluded</strong> — internal anchor points and hidden shapes do not consume a z-height; a hidden shape rejoins the stack when shown</li>
+                        <li><strong>Layers panel cleans up</strong> — internal anchor points are no longer listed</li>
+                        <li><strong>Resize keeps position</strong> — resizing an off-grid shape (e.g. after a 1px nudge) no longer snaps or moves the anchored edge; only the dragged edge snaps to the grid</li>
+                        <li><strong>Text padding on all four edges</strong> — the shape text padding setting now insets text from every edge, not just the aligned ones</li>
+                        <li><strong>Snapped line ends follow the outline on resize</strong> — a line attached to a rounded corner or arc (terminator, roundRect) now stays on the outline when the shape is resized, instead of drifting off it</li>
+                        <li><strong>Redo shortcut</strong> — <code>Ctrl/Cmd+Shift+Z</code> now redoes, alongside the existing <code>Ctrl/Cmd+Y</code></li>
+                    </ul>
+                </div>
                 <div class="changelog-entry">
                     <span class="ver">1.1.5</span><span class="date">Sep 12, 2026</span>
                     <ul>
