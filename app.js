@@ -828,35 +828,42 @@
             wrapper.appendChild(bg);
         }
 
-        // Connections SVG — single translated SVG with all paths
-        var connSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        connSVG.setAttribute('width', bnd.w); connSVG.setAttribute('height', bnd.h);
-        connSVG.style.cssText = 'position:absolute;top:0;left:0;';
-        var connG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        connG.setAttribute('transform', 'translate('+(-bnd.x)+','+(-bnd.y)+')');
+        // Connections — one absolutely-positioned wrapper per connection so each
+        // carries its own z-index and interleaves with the shapes exactly as it
+        // does on screen. (A single shared SVG has no per-path z-index, so every
+        // line would paint behind all of the shapes.)
+        var zOrder = computeZOrder();
         S.connections.forEach(function(c) {
             var ep = connEndpoints(c); if (!ep) return;
-            var d = 'M'+ep.x1+','+ep.y1+' L'+ep.x2+','+ep.y2;
+            var wrap = document.createElement('div');
+            wrap.className = 'diagram-conn';
+            wrap.dataset.connId = c.id;
+            wrap.style.cssText = 'position:absolute;top:0;left:0;width:'+bnd.w+'px;height:'+bnd.h+'px;z-index:'+(zOrder[c.id] || 1)+';pointer-events:none;';
+            var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', bnd.w); svg.setAttribute('height', bnd.h);
+            svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible';
+            var d = 'M'+(ep.x1 - bnd.x)+','+(ep.y1 - bnd.y)+' L'+(ep.x2 - bnd.x)+','+(ep.y2 - bnd.y);
             var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             path.setAttribute('d', d); path.setAttribute('stroke', c.stroke);
             path.setAttribute('stroke-width', c.sw); path.setAttribute('fill', 'none');
-            connG.appendChild(path);
+            svg.appendChild(path);
             if (c.arrowEnd) {
                 var a2 = Math.atan2(ep.y2 - ep.y1, ep.x2 - ep.x1);
                 var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
                 poly.setAttribute('class', 'conn-arrow');
-                poly.setAttribute('points', arrowHead(ep.x2, ep.y2, a2));
-                poly.setAttribute('fill', c.stroke); connG.appendChild(poly);
+                poly.setAttribute('points', arrowHead(ep.x2 - bnd.x, ep.y2 - bnd.y, a2));
+                poly.setAttribute('fill', c.stroke); svg.appendChild(poly);
             }
             if (c.arrowStart) {
                 var a1 = Math.atan2(ep.y1 - ep.y2, ep.x1 - ep.x2);
                 var poly2 = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
                 poly2.setAttribute('class', 'conn-arrow');
-                poly2.setAttribute('points', arrowHead(ep.x1, ep.y1, a1));
-                poly2.setAttribute('fill', c.stroke); connG.appendChild(poly2);
+                poly2.setAttribute('points', arrowHead(ep.x1 - bnd.x, ep.y1 - bnd.y, a1));
+                poly2.setAttribute('fill', c.stroke); svg.appendChild(poly2);
             }
+            wrap.appendChild(svg);
+            wrapper.appendChild(wrap);
         });
-        connSVG.appendChild(connG); wrapper.appendChild(connSVG);
 
         // Shapes — clone and offset
         var shapeEls = [].slice.call(srcEl.querySelectorAll('.diagram-shape'));
